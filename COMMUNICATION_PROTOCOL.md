@@ -4,9 +4,9 @@
 
 This document describes the communication protocol for the Piper TTS system, which consists of:
 
-1. **Python Piper HTTP Server** - The core TTS engine that generates audio
-2. **Dart MCP Server** - A Model Context Protocol server that provides a standardized interface
-3. **Dart PiperTTS Client** - A Dart class that manages the Python server and handles TTS operations
+1. **Python Piper HTTP Server** - TTS engine that generates audio
+2. **Dart MCP Server** - Model Context Protocol server for tool access
+3. **Dart PiperTTS Client** - Manages the Python server and handles TTS operations
 
 ## Architecture
 
@@ -28,7 +28,7 @@ This document describes the communication protocol for the Piper TTS system, whi
 
 ### 1. Python Piper HTTP Server
 
-**Purpose**: Core TTS engine that converts text to audio using ONNX voice models.
+**Purpose**: Converts text to audio using ONNX voice models.
 
 **Startup**: 
 - Started by Dart PiperTTS client via `startServer()` method
@@ -50,7 +50,7 @@ nohup /path/to/venv/bin/python3 -m piper.http_server -m /path/to/voices/voice.on
 
 ### 2. Dart MCP Server (piper_mcp_server.dart)
 
-**Purpose**: Implements the Model Context Protocol (MCP) for standardized tool access.
+**Purpose**: Implements the Model Context Protocol (MCP) for tool access.
 
 **Transport**: stdin/stdout (JSON-RPC 2.0)
 
@@ -99,7 +99,7 @@ Example response:
 
 ### 3. Dart PiperTTS Client (piper_tts.dart)
 
-**Purpose**: Manages the Python HTTP server and provides high-level TTS operations.
+**Purpose**: Manages the Python HTTP server and provides TTS operations.
 
 **Key Methods**:
 
@@ -162,15 +162,15 @@ python3 -m venv venv
 ## Available Voices
 
 Voice models are ONNX files located in the `voices/` directory:
-- `arngeir.onnx` - Greybeard elder (wise, calm)
-- `tulius.onnx` - General Tullius (stern, military)
-- `ulfric.onnx` - Ulfric Stormcloak (bold, Nordic)
-- `septimus.onnx` - Septimus Signus (obsessive scholar)
-- `femaledunmer.onnx` - Female Dunmer
-- `ancano.onnx` - Ancano (Thalmor wizard)
-- `mirabelleervine.onnx` - Mirabelle Ervine
-- `kodlakwhitemane.onnx` - Kodlak Whitemane
-- `nepali.onnx` - Nepali voice
+- arngeir.onnx
+- tulius.onnx
+- ulfric.onnx
+- septimus.onnx
+- femaledunmer.onnx
+- ancano.onnx
+- mirabelleervine.onnx
+- kodlakwhitemane.onnx
+- nepali.onnx
 
 ## Troubleshooting
 
@@ -254,23 +254,9 @@ curl -X POST http://localhost:5000 \
 ffplay -nodisp -autoexit output.wav
 ```
 
-## Security Considerations
-
-- The HTTP server runs on localhost only (no external access)
-- No authentication is implemented (assumes trusted environment)
-- Voice model files should be kept secure if proprietary
-
 ## Performance Notes
 
 - Server startup takes ~3 seconds
 - Voice switching requires server restart (~3 seconds)
 - Audio generation is fast (<1 second for short text)
 - Speech queue prevents overlapping audio playback
-
-## Future Improvements
-
-- Add HTTP authentication
-- Implement server health checks
-- Add voice model hot-swapping without restart
-- Support for streaming audio
-- Better error recovery mechanisms
