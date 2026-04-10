@@ -1,0 +1,5 @@
+name: piper_tts
+environment:
+  sdk: "^3.8.0"
+dependencies:
+  http: ^1.1.0

@@ -1,0 +1,22 @@
+# Python
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Dart
+.dart_tool/
+.packages
+.pub/
+build/
+
+# macOS
+.DS_Store
+
+# Logs
+logs/
+*.log
+
+# Test files
+test_audio.wav
