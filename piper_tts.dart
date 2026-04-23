@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'package:path/path.dart' as path;
 
 class PiperTTS {
   final String host;
@@ -10,9 +11,17 @@ class PiperTTS {
   
   PiperTTS({this.host = 'localhost', this.port = 5000});
 
+  /// Gets the directory where the script is located
+  static String getScriptDir() {
+    final scriptUri = Platform.script;
+    final scriptDir = path.dirname(scriptUri.toFilePath());
+    return scriptDir;
+  }
+
   /// Gets the list of available voices from the voices directory
   Future<List<String>> getAvailableVoices() async {
-    final voicesDir = Directory('/Volumes/shared_code/skyrim/piper/voices');
+    final scriptDir = getScriptDir();
+    final voicesDir = Directory(path.join(scriptDir, 'voices'));
     final voices = <String>[];
     
     if (await voicesDir.exists()) {
@@ -43,9 +52,9 @@ class PiperTTS {
   Future<void> startServer({String? voice}) async {
     try {
       final selectedVoice = voice ?? _currentVoice;
-      final scriptDir = '/Volumes/shared_code/skyrim/piper';
-      final pythonPath = '$scriptDir/venv/bin/python3';
-      final modelPath = '$scriptDir/voices/$selectedVoice.onnx';
+      final scriptDir = getScriptDir();
+      final pythonPath = path.join(scriptDir, 'venv', 'bin', 'python3');
+      final modelPath = path.join(scriptDir, 'voices', '$selectedVoice.onnx');
 
       print('Starting Piper TTS server with voice: $selectedVoice...');
       
