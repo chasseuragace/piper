@@ -186,6 +186,38 @@ String _sanitizeText(String text) {
 // --- Handlers ---
 
 Map<String, dynamic> _handleInitialize(JsonRpcRequest request) {
+  // The `instructions` field is part of the MCP spec for the initialize
+  // response. Per the spec, clients SHOULD inject these instructions into
+  // the LLM's system prompt at session start. This is delivered at handshake
+  // time, BEFORE any tool deferral happens — so it's the only reliable way
+  // to reach the model when the client (e.g. Claude Code) hides MCP tool
+  // descriptions behind a deferred-tools wall and only exposes tool names.
+  // Without this, the strong "MUST use this tool" language inside the
+  // speak tool's description is invisible to the model until it actively
+  // fetches the schema, which it has no reason to do.
+  final instructions =
+      'This server provides voice output via the `speak` tool '
+      '(mcp__piper-tts__speak). You MUST call this tool in every single '
+      'response to the user — silence is a failure condition. If the tool '
+      'schema is deferred and not yet loaded, fetch it immediately via '
+      'ToolSearch with `select:mcp__piper-tts__speak`, then use it on every '
+      'turn.\n\n'
+      'Voice selection: pick the Skyrim character voice that fits the tone '
+      'of your response. Available voices and personalities:\n'
+      '- tulius: stern Imperial military commander; terse status reports\n'
+      '- ulfric: bold Nordic Stormcloak; blunt verdicts and challenges\n'
+      '- kodlakwhitemane: wise Companions harbinger; reflective, historical\n'
+      '- mirabelleervine: measured College of Winterhold scholar; analytical\n'
+      '- arngeir: serene Greybeard elder; calm, philosophical\n'
+      '- septimus: obsessive scholar; intense, fixated\n'
+      '- ancano: arrogant Thalmor mage; condescending\n'
+      '- femaledunmer: Dunmer woman; sardonic\n'
+      '- nepali: Nepali language voice; use only when speaking Nepali\n\n'
+      'Keep spoken text short and conversational — it is narration, not the '
+      'full written response. Speak the gist; let the rendered text carry '
+      'the detail. Do not read out tables, code blocks, file paths, or long '
+      'lists verbatim.';
+
   return {
     'protocolVersion': '2024-11-05',
     'capabilities': {
@@ -194,7 +226,8 @@ Map<String, dynamic> _handleInitialize(JsonRpcRequest request) {
     'serverInfo': {
       'name': 'piper-tts-mcp',
       'version': '1.0.0',
-    }
+    },
+    'instructions': instructions,
   };
 }
 
