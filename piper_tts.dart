@@ -18,6 +18,15 @@ class PiperTTS {
     return scriptDir;
   }
 
+  /// Gets the Python executable path based on the platform
+  static String getPythonPath(String scriptDir) {
+    if (Platform.isWindows) {
+      return path.join(scriptDir, 'venv', 'Scripts', 'python.exe');
+    } else {
+      return path.join(scriptDir, 'venv', 'bin', 'python3');
+    }
+  }
+
   /// Gets the list of available voices from the voices directory
   Future<List<String>> getAvailableVoices() async {
     final scriptDir = getScriptDir();
@@ -27,7 +36,7 @@ class PiperTTS {
     if (await voicesDir.exists()) {
       await for (final entity in voicesDir.list()) {
         if (entity is File && entity.path.endsWith('.onnx')) {
-          final fileName = entity.path.split('/').last;
+          final fileName = path.basename(entity.path);
           final voiceName = fileName.replaceAll('.onnx', '');
           voices.add(voiceName);
         }
@@ -53,16 +62,25 @@ class PiperTTS {
     try {
       final selectedVoice = voice ?? _currentVoice;
       final scriptDir = getScriptDir();
-      final pythonPath = path.join(scriptDir, 'venv', 'bin', 'python3');
+      final pythonPath = getPythonPath(scriptDir);
       final modelPath = path.join(scriptDir, 'voices', '$selectedVoice.onnx');
 
       print('Starting Piper TTS server with voice: $selectedVoice...');
       
-      // Start the server detached using shell redirection
-      await Process.run('bash', [
-        '-c',
-        'nohup $pythonPath -m piper.http_server -m $modelPath > /tmp/piper_server.log 2>&1 &'
-      ]);
+      // Start the server detached
+      if (Platform.isWindows) {
+        // Windows: use start /B to run in background
+        await Process.run('cmd', [
+          '/c',
+          'start /B $pythonPath -m piper.http_server -m $modelPath > %TEMP%\\piper_server.log 2>&1'
+        ]);
+      } else {
+        // Unix: use nohup to run in background
+        await Process.run('bash', [
+          '-c',
+          'nohup $pythonPath -m piper.http_server -m $modelPath > /tmp/piper_server.log 2>&1 &'
+        ]);
+      }
 
       // Give the server time to start
       await Future.delayed(Duration(seconds: 3));
@@ -89,10 +107,16 @@ class PiperTTS {
   /// Stops the Piper TTS server
   Future<void> stopServer() async {
     try {
-      await Process.run('bash', [
-        '-c',
-        'pkill -f "piper.http_server"'
-      ]);
+      if (Platform.isWindows) {
+        // Windows: use taskkill
+        await Process.run('taskkill', ['/F', '/IM', 'python.exe', '/FI', 'WINDOWTITLE eq piper.http_server*']);
+      } else {
+        // Unix: use pkill
+        await Process.run('bash', [
+          '-c',
+          'pkill -f "piper.http_server"'
+        ]);
+      }
       await Future.delayed(Duration(seconds: 1));
       print('Piper TTS server stopped');
     } catch (e) {

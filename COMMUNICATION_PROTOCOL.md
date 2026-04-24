@@ -33,11 +33,16 @@ This document describes the communication protocol for the Piper TTS system, whi
 **Startup**: 
 - Started by Dart PiperTTS client via `startServer()` method
 - Runs on `localhost:5000` by default
-- Uses nohup to run in background with logging to `/tmp/piper_server.log`
+- Cross-platform background process management with logging
 
-**Command**:
+**Command (Linux/macOS)**:
 ```bash
 nohup /path/to/venv/bin/python3 -m piper.http_server -m /path/to/voices/voice.onnx > /tmp/piper_server.log 2>&1 &
+```
+
+**Command (Windows)**:
+```cmd
+start /B venv\Scripts\python.exe -m piper.http_server -m voices\voice.onnx > %TEMP%\piper_server.log 2>&1
 ```
 
 **API Endpoint**:
@@ -114,16 +119,19 @@ Example response:
 - Checks if server is running via TCP connection test
 - Only starts server if not already running
 - Restarts server when switching voice models
-- Uses `pkill -f "piper.http_server"` to stop server
+- Cross-platform process termination:
+  - Linux/macOS: `pkill -f "piper.http_server"`
+  - Windows: `taskkill /F /IM python.exe /FI "WINDOWTITLE eq piper.http_server*"`
 
 ## Setup Instructions
 
 ### Prerequisites
 
 - Python 3.9+
-- Dart SDK
+- Dart SDK 3.8.0+
 - ffmpeg/ffplay (for audio playback)
 - ONNX voice models in `voices/` directory
+- Cross-platform support: Windows, Linux, macOS
 
 ### Quick Setup
 
@@ -150,6 +158,7 @@ dart piper_mcp_server.dart
 
 If the setup script fails, you can set up manually:
 
+**Linux/macOS**:
 ```bash
 # Create virtual environment
 python3 -m venv venv
@@ -157,6 +166,16 @@ python3 -m venv venv
 # Install dependencies
 ./venv/bin/pip install --upgrade pip
 ./venv/bin/pip install piper-tts flask
+```
+
+**Windows**:
+```cmd
+# Create virtual environment
+python -m venv venv
+
+# Install dependencies
+venv\Scripts\pip install --upgrade pip
+venv\Scripts\pip install piper-tts flask
 ```
 
 ## Available Voices
@@ -185,10 +204,14 @@ Voice models are ONNX files located in the `voices/` directory:
 4. Port 5000 already in use
 
 **Solutions**:
-1. Run `./setup_venv.sh`
-2. Check `/tmp/piper_server.log` for errors
+1. Run `./setup_venv.sh` (Linux/macOS) or set up venv manually on Windows
+2. Check log file for errors:
+   - Linux/macOS: `/tmp/piper_server.log`
+   - Windows: `%TEMP%\piper_server.log`
 3. Verify voice files exist in `voices/` directory
-4. Kill existing server: `pkill -f "piper.http_server"`
+4. Kill existing server:
+   - Linux/macOS: `pkill -f "piper.http_server"`
+   - Windows: `taskkill /F /IM python.exe /FI "WINDOWTITLE eq piper.http_server*"`
 
 ### MCP transport errors
 
