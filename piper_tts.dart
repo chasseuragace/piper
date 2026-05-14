@@ -172,14 +172,21 @@ class PiperTTS {
     }
   }
 
-  /// Plays the generated speech using ffplay
+  /// Plays the generated speech using appropriate player based on OS
   Future<void> playAudio(String filePath) async {
     try {
-      final process = await Process.run('ffplay', [
-        '-nodisp',
-        '-autoexit',
-        filePath,
-      ]);
+      String command;
+      List<String> args;
+
+      if (Platform.isMacOS) {
+        command = 'afplay';
+        args = [filePath];
+      } else {
+        command = 'ffplay';
+        args = ['-nodisp', '-autoexit', filePath];
+      }
+
+      final process = await Process.run(command, args);
       
       if (process.exitCode != 0) {
         throw Exception('Failed to play audio: ${process.stderr}');

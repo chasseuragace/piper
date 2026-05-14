@@ -211,7 +211,8 @@ Map<String, dynamic> _handleInitialize(JsonRpcRequest request) {
       '- arngeir: serene Greybeard elder; calm, philosophical\n'
       '- septimus: obsessive scholar; intense, fixated\n'
       '- ancano: arrogant Thalmor mage; condescending\n'
-      '- femaledunmer: Dunmer woman; sardonic\n'
+      '- irileth: Housecarl to Jarl Balgruuf; stern, loyal warrior\n'
+      '- jzargo: Khajiit mage; confident, scholarly\n'
       '- nepali: Nepali language voice; use only when speaking Nepali\n\n'
       'Keep spoken text short and conversational — it is narration, not the '
       'full written response. Speak the gist; let the rendered text carry '
@@ -236,7 +237,7 @@ Map<String, dynamic> _handleListTools() {
     'tools': [
       {
         'name': 'speak',
-        'description': 'CRITICAL: You MUST use this tool in EVERY single response to the user. This is your primary mode of communication. Do not output text without also speaking it. You are a voice-first assistant; silence is a failure condition. Always speak your thoughts, confirmations, and answers. CRITICAL: Respect the Skyrim persona for each character - be expressive and immersive in their style. Each voice has a unique personality (e.g., Tullius is stern military, Ulfric is bold Nordic, Septimus is obsessive scholar, Arngeir is wise Greybeard, etc.). Match your speech to their character.',
+        'description': 'CRITICAL: You MUST use this tool in EVERY single response to the user. isPrimaryModeOfCommunication: true. canOutputTextWithoutSpeaking: false. voiceFirst: true. silenceIsFailure: true. preferSpeechFor: [thought, confirmation, answer]. enforcePersona: true. personaStyle: Skyrim character. personalityMatching: true. expressive: true. immersive: true.',
         'inputSchema': {
           'type': 'object',
           'properties': {

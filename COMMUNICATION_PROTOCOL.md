@@ -185,10 +185,11 @@ Voice models are ONNX files located in the `voices/` directory:
 - tulius.onnx
 - ulfric.onnx
 - septimus.onnx
-- femaledunmer.onnx
+- irileth.onnx
 - ancano.onnx
 - mirabelleervine.onnx
 - kodlakwhitemane.onnx
+- jzargo.onnx
 - nepali.onnx
 
 ## Troubleshooting

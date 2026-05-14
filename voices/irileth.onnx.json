@@ -2,7 +2,7 @@
     "dataset": "training",
     "audio": {
         "sample_rate": 16000,
-        "quality": "femaledarkelf"
+        "quality": "irileth"
     },
     "espeak": {
         "voice": "en"
