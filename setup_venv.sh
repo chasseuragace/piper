@@ -11,6 +11,31 @@ cd "$SCRIPT_DIR"
 echo "=== Piper TTS Environment Setup ==="
 echo ""
 
+echo "Checking system dependencies..."
+
+# Check for curl (needed for tts.sh)
+if ! command -v curl &> /dev/null; then
+    echo "Error: 'curl' is not installed or not in PATH. It is required to send requests to the Piper server."
+    exit 1
+fi
+echo "✓ curl found"
+
+# Check OS specific audio players
+if [ "$(uname -s)" = "Darwin" ]; then
+    if ! command -v afplay &> /dev/null; then
+        echo "Error: 'afplay' is not found. This is built into macOS and is required for audio playback."
+        exit 1
+    fi
+    echo "✓ afplay found"
+else
+    if ! command -v ffplay &> /dev/null; then
+        echo "Error: 'ffplay' is not installed or not in PATH."
+        echo "Please install ffmpeg (e.g., 'sudo apt install ffmpeg' or 'brew install ffmpeg') as it is required for audio playback on this OS."
+        exit 1
+    fi
+    echo "✓ ffplay found"
+fi
+
 # Check if Python 3 is available
 if ! command -v python3 &> /dev/null; then
     echo "Error: python3 is not installed or not in PATH"
