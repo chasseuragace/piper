@@ -65,6 +65,24 @@ void main() {
     }
   });
 
+  print('\n=== General Rules Fallback Tests ===');
+  final generalTestCases = {
+    'Pfft, that is not a problem.': ['Nonsense, that is not a problem.', 'Hardly, that is not a problem.'],
+    'Grrr, don\'t worry.': ['Damn, don\'t worry.', 'By the gods, don\'t worry.'],
+    'Tsk! We will fix it.': ['Careless! We will fix it.', 'Disappointing! We will fix it.'],
+  };
+
+  generalTestCases.forEach((raw, expectedList) {
+    total++;
+    final result = sanitizeText(raw);
+    if (expectedList.contains(result)) {
+      print('✅ PASS: "$raw" -> "$result" (matches expected variant)');
+      passed++;
+    } else {
+      print('❌ FAIL: "$raw"\n  Expected one of: $expectedList\n  Got:             "$result"');
+    }
+  });
+
   print('\nResults: $passed / $total passed.');
   if (passed == total) {
     print('🎉 Perfect! All speech normalization assertions passed!');

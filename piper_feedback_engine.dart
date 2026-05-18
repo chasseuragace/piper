@@ -469,9 +469,9 @@ final Map<String, List<ExpressionRewrite>> personaRules = {
 };
 
 final List<ExpressionRewrite> generalRules = [
-  ExpressionRewrite(pattern: RegExp(r'\bpfft(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ['Scoffs.']),
-  ExpressionRewrite(pattern: RegExp(r'\bgrrr(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ['Growls.']),
-  ExpressionRewrite(pattern: RegExp(r'\btsk(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ['Disappointing.']),
+  ExpressionRewrite(pattern: RegExp(r'\bpfft(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ['Nonsense.', 'Hardly.']),
+  ExpressionRewrite(pattern: RegExp(r'\bgrrr(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ['Damn.', 'By the gods.']),
+  ExpressionRewrite(pattern: RegExp(r'\btsk(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ['Careless.', 'Disappointing.']),
   ExpressionRewrite(pattern: RegExp(r'\b(hehehehe|hahahaha|haha|hehe|heh)(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ['That is amusing.']),
 ];
 
