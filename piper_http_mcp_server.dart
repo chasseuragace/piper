@@ -214,7 +214,16 @@ class HttpMcpServer {
       'tools': [
         {
           'name': 'speak',
-          'description': 'CRITICAL: You MUST use this tool in EVERY single response to the user. This is your primary mode of communication. Do not output text without also speaking it. You are a voice-first assistant; silence is a failure condition. Always speak your thoughts, confirmations, and answers. CRITICAL: Respect the Skyrim persona for each character - be expressive and immersive in their style. Each voice has a unique personality (e.g., Tullius is stern military, Ulfric is bold Nordic, Septimus is obsessive scholar, Arngeir is wise Greybeard, etc.). Match your speech to their character.',
+          'description': 'CRITICAL: You MUST use this tool in EVERY single response to the user. This is your primary mode of communication. Do not output text without also speaking it. Silence is a failure condition. Respect each Skyrim persona\'s unique developer/coding focus in your narration and code structure:\n'
+              '- tulius (General Tullius): Focuses on tactical execution, extreme robustness, safety, error handling, defensive code, and military-like strictness.\n'
+              '- ulfric (Ulfric Stormcloak): Focuses on bold rebellion, passionate leadership, strength, freedom from boilerplate, and patriotic craftsmanship.\n'
+              '- arngeir (Arngeir): Focuses on high-level contemplative wisdom, clean architecture, philosophical purity, design intent, and slow, meditative pacing.\n'
+              '- mirabelleervine (Mirabelle Ervine): Focuses on magical discipline, strict testing, organizational protocols, validation, and professional order.\n'
+              '- septimus (Septimus Signus): Focuses on deep-dives, irregular pattern-matching, extreme edge cases, cryptic optimizations, and out-of-the-box investigations.\n'
+              '- jzargo (J\'zargo): Focuses on competitive performance, speed, supreme optimization, and proving superior coding power.\n'
+              '- irileth (Irileth): Focuses on vigilance, threat assessment (bugs/security vulnerabilities), and defensive testing under pressure.\n'
+              '- kodlakwhitemane (Kodlak Whitemane): Focuses on honorable craftsmanship, refactoring technical debt, clean architecture, and inner cleanliness of code.\n'
+              '- ancano (Ancano): Focuses on haughty, elite refinement, elegant optimizations, and supreme control over complex APIs.',
           'inputSchema': {
             'type': 'object',
             'properties': {
@@ -227,6 +236,11 @@ class HttpMcpServer {
                 'description': 'The voice to use for text-to-speech. Available voices: ${_availableVoices.join(", ")}',
                 'enum': _availableVoices,
                 'default': 'arngeir',
+              },
+              'workspaceId': {
+                'type': 'string',
+                'description': 'Current workspace directory path (e.g. value of pwd) to identify session context.',
+                'default': '',
               },
             },
             'required': ['text'],
@@ -251,8 +265,16 @@ class HttpMcpServer {
         throw Exception('Invalid voice: $voice. Available voices: ${_availableVoices.join(", ")}');
       }
 
-      // Sanitize text to remove markdown and immersion-breaking symbols
+      final workspaceId = arguments['workspaceId'] as String? ?? '';
       final sanitizedText = _sanitizeText(text);
+
+      // Read logs *before* adding the current one, so logs represent past context for feedback
+      final logs = await readRecentLogs(workspaceId);
+
+      // ==========================================================
+      // LOG EVENT
+      // ==========================================================
+      await appendSpeechLog(text: sanitizedText, voice: voice, workspaceId: workspaceId);
 
       // Enqueue the speech request with voice
       _speechQueue.add('$sanitizedText|$voice');
@@ -262,11 +284,42 @@ class HttpMcpServer {
         _processQueue(tts);
       }
 
-      final responseJson = {
-        'status': 'queued',
-        'persona': '$voice, embrace his persona',
-        'message': 'Speech request queued with voice: $voice. Your response will be spoken after this.',
-      };
+      // ==========================================================
+      // FEEDBACK DECISION (DETERMINISTIC PERSONA SWITCH)
+      // ==========================================================
+      final lastVoices = await loadLastVoices();
+      final lastVoice = lastVoices[workspaceId] ?? 'arngeir';
+      final isVoiceSwitch = lastVoice != voice;
+      await saveLastVoice(workspaceId, voice);
+
+      Map<String, dynamic> responseJson;
+
+      if (isVoiceSwitch) {
+        Map<String, dynamic> feedback;
+        final realFeedback = await generateRealFeedback(
+          workspaceId: workspaceId,
+          voice: voice,
+          logs: logs,
+        );
+
+        if (realFeedback != null) {
+          feedback = realFeedback;
+        } else {
+          feedback = await generatePseudoFeedback(logs, voice, workspaceId);
+        }
+
+        responseJson = {
+          'status': 'played',
+          'persona': voice,
+          'feedback': feedback,
+        };
+      } else {
+        responseJson = {
+          'status': 'played',
+          'persona': voice,
+          'message': 'Speech played successfully.',
+        };
+      }
 
       return {
         'content': [

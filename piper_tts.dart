@@ -65,7 +65,7 @@ class PiperTTS {
       final pythonPath = getPythonPath(scriptDir);
       final modelPath = path.join(scriptDir, 'voices', '$selectedVoice.onnx');
 
-      print('Starting Piper TTS server with voice: $selectedVoice...');
+      stderr.writeln('Starting Piper TTS server with voice: $selectedVoice...');
       
       // Start the server detached
       if (Platform.isWindows) {
@@ -89,7 +89,7 @@ class PiperTTS {
       int attempts = 0;
       while (attempts < 10) {
         if (await isServerRunning()) {
-          print('Piper TTS server started successfully');
+          stderr.writeln('Piper TTS server started successfully');
           _currentVoice = selectedVoice;
           return;
         }
@@ -99,7 +99,7 @@ class PiperTTS {
       
       throw Exception('Server failed to start after 5 seconds');
     } catch (e) {
-      print('Error starting server: $e');
+      stderr.writeln('Error starting server: $e');
       rethrow;
     }
   }
@@ -118,9 +118,9 @@ class PiperTTS {
         ]);
       }
       await Future.delayed(Duration(seconds: 1));
-      print('Piper TTS server stopped');
+      stderr.writeln('Piper TTS server stopped');
     } catch (e) {
-      print('Error stopping server: $e');
+      stderr.writeln('Error stopping server: $e');
     }
   }
 
@@ -167,7 +167,7 @@ class PiperTTS {
         throw Exception('Failed to generate speech: ${response.statusCode} ${response.reasonPhrase}');
       }
     } catch (e) {
-      print('Error: $e');
+      stderr.writeln('Error: $e');
       rethrow;
     }
   }
@@ -192,7 +192,7 @@ class PiperTTS {
         throw Exception('Failed to play audio: ${process.stderr}');
       }
     } catch (e) {
-      print('Error playing audio: $e');
+      stderr.writeln('Error playing audio: $e');
       rethrow;
     }
   }
@@ -208,7 +208,7 @@ class PiperTTS {
       await File(audioFile).delete();
     } catch (e) {
       if (audioFile is String) await File(audioFile).delete();
-      print('Error in speak(): $e');
+      stderr.writeln('Error in speak(): $e');
       rethrow;
     }
   }

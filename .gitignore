@@ -21,3 +21,7 @@ speech_logs.jsonl
 
 # Test files
 test_audio.wav
+
+# Speech Workspace logs and state
+workspace_logs/
+
