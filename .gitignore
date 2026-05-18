@@ -17,6 +17,7 @@ build/
 # Logs
 logs/
 *.log
+speech_logs.jsonl
 
 # Test files
 test_audio.wav
