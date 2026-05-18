@@ -41,7 +41,10 @@ Future<void> main() async {
       'method': 'tools/call',
       'params': {
         'name': 'speak',
-        'arguments': {'text': 'Hello from the HTTP MCP server!'}
+        'arguments': {
+          'text': 'Hello from the HTTP MCP server!',
+          'workspaceId': '/test/http_workspace'
+        }
       }
     });
     print('Speak response: ${jsonEncode(speakResponse)}');

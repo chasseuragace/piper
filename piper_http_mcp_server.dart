@@ -203,10 +203,9 @@ class HttpMcpServer {
               'workspaceId': {
                 'type': 'string',
                 'description': 'Current workspace directory path (e.g. value of pwd) to identify session context.',
-                'default': '',
               },
             },
-            'required': ['text'],
+            'required': ['text', 'workspaceId'],
           },
         }
       ]
@@ -228,7 +227,10 @@ class HttpMcpServer {
         throw Exception('Invalid voice: $voice. Available voices: ${_availableVoices.join(", ")}');
       }
 
-      final workspaceId = arguments['workspaceId'] as String? ?? '';
+      final workspaceId = arguments['workspaceId'] as String?;
+      if (workspaceId == null || workspaceId.trim().isEmpty) {
+        throw Exception('Missing or invalid argument: workspaceId must be a non-empty string path.');
+      }
       final sanitizedText = sanitizeText(text);
 
       // Read logs *before* adding the current one, so logs represent past context for feedback

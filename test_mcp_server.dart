@@ -62,7 +62,10 @@ void main() async {
     'method': 'tools/call',
     'params': {
       'name': 'speak',
-      'arguments': {'text': 'Hello from MCP test'}
+      'arguments': {
+        'text': 'Hello from MCP test',
+        'workspaceId': '/test/workspace'
+      }
     },
     'id': 3
   });

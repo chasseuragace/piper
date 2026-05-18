@@ -88,32 +88,32 @@ UnifiedAIClient? getAIClient() {
 
 // Slugs the workspace path to use as a file name safely
 File getLogFileForWorkspace(String workspaceId) {
+  if (workspaceId.trim().isEmpty) {
+    throw ArgumentError('workspaceId cannot be empty or blank.');
+  }
+
   final scriptDir = PiperTTS.getScriptDir();
   final logsDir = Directory(path.join(scriptDir, 'workspace_logs'));
   if (!logsDir.existsSync()) {
     logsDir.createSync(recursive: true);
   }
 
-  String filename;
-  if (workspaceId.trim().isEmpty) {
-    filename = 'default_speech_logs.jsonl';
+  // Slug path: replace non-alphanumeric chars with underscores, take last 2 parts
+  final cleanPath = workspaceId.replaceAll(RegExp(r'[^a-zA-Z0-9_\-/]'), '_');
+  final parts = cleanPath.split('/').where((e) => e.isNotEmpty).toList();
+  String slug;
+  if (parts.length >= 2) {
+    slug = '${parts[parts.length - 2]}_${parts.last}';
+  } else if (parts.isNotEmpty) {
+    slug = parts.last;
   } else {
-    // Slug path: replace non-alphanumeric chars with underscores, take last 2 parts
-    final cleanPath = workspaceId.replaceAll(RegExp(r'[^a-zA-Z0-9_\-/]'), '_');
-    final parts = cleanPath.split('/').where((e) => e.isNotEmpty).toList();
-    String slug;
-    if (parts.length >= 2) {
-      slug = '${parts[parts.length - 2]}_${parts.last}';
-    } else if (parts.isNotEmpty) {
-      slug = parts.last;
-    } else {
-      slug = 'default';
-    }
-    filename = 'speech_logs_$slug.jsonl';
+    slug = 'default';
   }
+  final filename = 'speech_logs_$slug.jsonl';
 
   return File(path.join(logsDir.path, filename));
 }
+
 
 // ============================================================
 // LOGGING

@@ -210,10 +210,9 @@ Map<String, dynamic> _handleListTools() {
             'workspaceId': {
               'type': 'string',
               'description': 'Current workspace directory path (e.g. value of pwd) to identify session context.',
-              'default': '',
             },
           },
-          'required': ['text'],
+          'required': ['text', 'workspaceId'],
         },
       },
     ],
@@ -243,7 +242,10 @@ Future<Map<String, dynamic>> _handleCallTool(
 
   final voice = arguments['voice'] as String? ?? 'arngeir';
 
-  final workspaceId = arguments['workspaceId'] as String? ?? '';
+  final workspaceId = arguments['workspaceId'] as String?;
+  if (workspaceId == null || workspaceId.trim().isEmpty) {
+    throw Exception('Missing or invalid argument: workspaceId must be a non-empty string path.');
+  }
 
   if (!_availableVoices.contains(voice)) {
     throw Exception('Invalid voice: $voice');
