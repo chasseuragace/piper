@@ -16,6 +16,9 @@ A Dart wrapper for the Piper text-to-speech engine with cross-platform support (
 - Multiple voice support
 - Audio playback via ffplay
 - Simple API for AI agent integration
+- **Immersive Speech Normalizer**: Context-aware, persona-preserving replacement of unstable interjections (e.g., "hmph" -> voice-customized speech equivalents) and typography cleanup
+- **Log Compaction Engine**: Boundless log growth prevention via intelligent transaction-safe summarization of historical dialogue
+
 
 ## Prerequisites
 
@@ -138,6 +141,25 @@ Explore the official Piper TTS voice gallery to find additional voices:
 1. Download voice models from the galleries above
 2. Place `.onnx` files in the `voices/` directory
 3. Use the voice name (without `.onnx` extension) when calling `speak()` or `restartWithVoice()`
+
+## Advanced Speech & Log Infrastructure
+
+This wrapper features premium, advanced infrastructure built specifically for high-frequency interactive LLM programming and maximum speech immersion:
+
+### 🎙️ Persona-Preserving Speech Normalization
+
+To ensure maximum vocal immersion during text-to-speech playback, the system features a dedicated normalization pipeline that filters out sound synthesis bugs and robotic vocalizations:
+* **Typography Cleanup**: Normalizes triple punctuations and dot spams (`!!!` ➡️ `!`, `???` ➡️ `?`, `.....` ➡️ `…`).
+* **Persona-Preserving Rewrites**: Unstable TTS interjections like `hmph`, `tch`, `ugh`, and `ah` are dynamically replaced with character-authentic, randomized spoken cadences specific to each voice (e.g., General Tullius: *“As expected.”*, J'zargo: *“J'zargo expected as much.”*, Arngeir: *“Patience.”*).
+* **Immersive Fallbacks**: Global unstable sounds like `pfft` (disdain), `grrr` (frustration), and `tsk` (disapproval) are translated to setting-appropriate, fully-spoken words (e.g., *“Nonsense”* or *“Hardly”*, *“Damn”* or *“By the gods”*, *“Careless”* or *“Disappointing”*) rather than vocalizing literal stage directions.
+* **Punctuation Preservation**: Automatically detects and propagates the trailing punctuation (commas, exclamations, periods) of the original match onto the replacement output to protect sentence rhythm.
+
+### 📦 Transaction-Safe Log Compaction
+
+High-frequency sessions generate a massive volume of speech logs, slowing down LLM context parsing. The built-in Compaction Engine enforces boundless efficiency:
+* **Rolling History**: Retains the exact raw content of the most recent entries (default: 3) for immediate high-fidelity feedback.
+* **System Summarization**: Older entries are dynamically synthesized into a structured, single-line system summary (e.g., `[SUMMARY OF PREVIOUS CONTEXT]: ...`) merging developer topics, tasks, and participant actions.
+* **Transaction Safety**: Performs the read-summarize-write lifecycle under a strict temporary file lock, ensuring no data loss occurs if the process is interrupted.
 
 ## MCP Integration
 
