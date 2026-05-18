@@ -135,6 +135,104 @@ Future<void> appendSpeechLog({
   };
 
   await file.writeAsString('${jsonEncode(logEntry)}\n', mode: FileMode.append);
+
+  // Trigger dynamic compaction transaction to keep logs compact and token-efficient
+  await compactLogsIfNeeded(workspaceId);
+}
+
+// Compacts old speech logs into a single summary log entry if logs exceed threshold
+Future<void> compactLogsIfNeeded(String workspaceId) async {
+  try {
+    final file = getLogFileForWorkspace(workspaceId);
+    if (!await file.exists()) return;
+
+    final lines = await file.readAsLines();
+    final nonEmptyLines = lines.where((e) => e.trim().isNotEmpty).toList();
+
+    // Trigger compaction if we have > 10 entries OR total characters > 3000
+    final totalChars = nonEmptyLines.map((e) => e.length).fold(0, (a, b) => a + b);
+    if (nonEmptyLines.length <= 10 && totalChars <= 3000) {
+      return;
+    }
+
+    // Must have at least 4 entries to meaningfully compact
+    if (nonEmptyLines.length < 4) return;
+
+    stderr.writeln('Compacting speech logs for workspace $workspaceId. Total lines: ${nonEmptyLines.length}, chars: $totalChars');
+
+    // Parse all log entries
+    final entries = nonEmptyLines.map((e) => jsonDecode(e) as Map<String, dynamic>).toList();
+
+    // We keep the last 3 entries raw, and roll up everything else (including any previous summaries)
+    final keepCount = 3;
+    final rollupEntries = entries.sublist(0, entries.length - keepCount);
+    final keepEntries = entries.sublist(entries.length - keepCount);
+
+    // Format the rollup entries for the AI
+    final rollupSummary = rollupEntries.map((e) {
+      final voice = e['voice'] ?? 'unknown';
+      final text = e['text'] ?? '';
+      return '[$voice]: "$text"';
+    }).join('\n');
+
+    String summaryText = '';
+    final client = getAIClient();
+    if (client != null) {
+      final systemPrompt =
+          'You are the Sigil Stone Cognitive Compactor.\n'
+          'Your job is to condense a sequence of speech log entries from a pair-programming session into a single, extremely brief summary statement (1-2 sentences).\n'
+          'Identify what tasks were active, which voice personas spoke, and their primary focus or outcomes.\n'
+          'Keep your output professional, concise, and dense with context.\n\n'
+          'OUTPUT FORMAT:\n'
+          'Return ONLY a single valid JSON object containing exactly the following key:\n'
+          '- "summary": "The highly concise summary statement."\n\n'
+          'CRITICAL: Return ONLY raw JSON. Do not include markdown backticks or formatting.';
+
+      final prompt =
+          'Speech Logs to Compact:\n'
+          '$rollupSummary\n\n'
+          'Write the JSON summary for the above logs.';
+
+      final jsonResult = await client.generateJsonCompletion(
+        prompt,
+        systemPrompt: systemPrompt,
+        temperature: 0.5,
+        maxTokens: 200,
+      );
+
+      summaryText = jsonResult?['summary'] ?? '';
+    }
+
+    // Fallback if AI call failed or returned empty
+    if (summaryText.isEmpty) {
+      final voices = rollupEntries.map((e) => e['voice']).toSet().join(', ');
+      summaryText = 'Development continued with contributions from active voices ($voices) focusing on coding tasks.';
+    }
+
+    final compactedSummaryEntry = {
+      'timestamp': DateTime.now().toIso8601String(),
+      'text': '[SUMMARY OF PREVIOUS CONTEXT]: $summaryText',
+      'voice': 'system',
+      'workspaceId': workspaceId,
+      'length': summaryText.length + 30,
+    };
+
+    // Construct the compacted lines
+    final List<Map<String, dynamic>> compactedEntries = [compactedSummaryEntry, ...keepEntries];
+
+    // Atomically write compacted logs using a temporary file (as Mirabelle Ervine protocol dictates!)
+    final tempFile = File('${file.path}.tmp');
+    final buffer = StringBuffer();
+    for (final entry in compactedEntries) {
+      buffer.writeln(jsonEncode(entry));
+    }
+    await tempFile.writeAsString(buffer.toString());
+    await tempFile.rename(file.path);
+
+    stderr.writeln('Compaction transaction completed successfully for workspace $workspaceId.');
+  } catch (e) {
+    stderr.writeln('Error compacting speech logs: $e');
+  }
 }
 
 Future<List<Map<String, dynamic>>> readRecentLogs(String workspaceId) async {
