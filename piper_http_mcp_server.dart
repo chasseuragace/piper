@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:async';
 import 'piper_tts.dart';
 import 'piper_mcp_server.dart';
+import 'piper_feedback_engine.dart';
 
 // HTTP MCP Server implementation following MCP HTTP transport standard
 class HttpMcpServer {
@@ -154,46 +155,8 @@ class HttpMcpServer {
     response.close();
   }
 
-  // --- Text Sanitizer ---
+  // Sanitization is now handled by the unified sanitizeText function in piper_feedback_engine.dart
 
-  String _sanitizeText(String text) {
-    // Remove markdown formatting
-    String sanitized = text
-      .replaceAll(RegExp(r'\*\*'), '') // Bold
-      .replaceAll(RegExp(r'\*'), '') // Italic
-      .replaceAll(RegExp(r'__'), '') // Bold underscore
-      .replaceAll(RegExp(r'_'), '') // Italic underscore
-      .replaceAll(RegExp(r'~~'), '') // Strikethrough
-      .replaceAll(RegExp(r'`'), '') // Inline code
-      .replaceAll(RegExp(r'```'), '') // Code blocks
-      .replaceAll(RegExp(r'^#+\s', multiLine: true), '') // Headers
-      .replaceAll(RegExp(r'\[([^\]]+)\]\([^)]+\)'), r'\1') // Links: [text](url) -> text
-      .replaceAll(RegExp(r'!\[([^\]]*)\]\([^)]+\)'), '') // Images: ![alt](url) -> remove
-      .replaceAll(RegExp(r'^>\s', multiLine: true), '') // Blockquotes
-      .replaceAll(RegExp(r'^\s*[-*+]\s', multiLine: true), '') // Unordered lists
-      .replaceAll(RegExp(r'^\s*\d+\.\s', multiLine: true), '') // Ordered lists
-      .replaceAll(RegExp(r'^-{3,}', multiLine: true), '') // Horizontal rules
-      // Remove technical date/time formats
-      .replaceAll(RegExp(r'\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})?'), '') // ISO 8601 timestamps
-      .replaceAll(RegExp(r'\d{4}-\d{2}-\d{2}'), '') // ISO dates (YYYY-MM-DD)
-      .replaceAll(RegExp(r'\d{2}/\d{2}/\d{4}'), '') // US dates (MM/DD/YYYY)
-      .replaceAll(RegExp(r'\d{2}-\d{2}-\d{4}'), '') // European dates (DD-MM-YYYY)
-      .replaceAll(RegExp(r'\d{2}:\d{2}:\d{2}(?:\s?[AP]M)?'), '') // Times with seconds (HH:MM:SS)
-      .replaceAll(RegExp(r'\d{2}:\d{2}(?:\s?[AP]M)?'), '') // Times without seconds (HH:MM)
-      .replaceAll(RegExp(r'\d{1,2}:\d{2}\s?[AP]M'), '') // 12-hour times (H:MM AM/PM)
-      // Remove technical symbols that break immersion
-      .replaceAll(RegExp(r'\[|\]'), '') // Square brackets
-      .replaceAll(RegExp(r'\{|\}'), '') // Curly braces (unless part of natural speech)
-      .replaceAll(RegExp(r'<|>'), '') // Angle brackets
-      .replaceAll(RegExp(r'\\'), '') // Backslashes
-      .replaceAll(RegExp(r'/'), '') // Forward slashes (unless natural)
-      .replaceAll(RegExp(r'`'), '') // Backticks (again to be sure)
-      // Clean up extra whitespace from removed formatting
-      .replaceAll(RegExp(r'\s+'), ' ') // Multiple spaces to single
-      .trim();
-    
-    return sanitized;
-  }
 
   // Reuse the handlers from the original MCP server
   Map<String, dynamic> handleInitialize(JsonRpcRequest request) {
@@ -266,7 +229,7 @@ class HttpMcpServer {
       }
 
       final workspaceId = arguments['workspaceId'] as String? ?? '';
-      final sanitizedText = _sanitizeText(text);
+      final sanitizedText = sanitizeText(text);
 
       // Read logs *before* adding the current one, so logs represent past context for feedback
       final logs = await readRecentLogs(workspaceId);
