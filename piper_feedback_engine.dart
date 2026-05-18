@@ -377,8 +377,107 @@ Future<Map<String, dynamic>> generatePseudoFeedback(
 // TEXT SANITIZER
 // ============================================================
 
-String sanitizeText(String text) {
-  return text
+// ============================================================
+// TEXT SANITIZER & SPEECH NORMALIZER
+// ============================================================
+
+class ExpressionRewrite {
+  final RegExp pattern;
+  final List<String> replacements;
+  final double emotionalIntensity;
+
+  ExpressionRewrite({
+    required this.pattern,
+    required this.replacements,
+    this.emotionalIntensity = 1.0,
+  });
+}
+
+final Map<String, List<ExpressionRewrite>> personaRules = {
+  'tulius': [
+    ExpressionRewrite(pattern: RegExp(r'\bhmph(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ['As expected.']),
+    ExpressionRewrite(pattern: RegExp(r'\bhaha(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ['Amusing.']),
+    ExpressionRewrite(pattern: RegExp(r'\bhmm(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ['Let me consider this.']),
+    ExpressionRewrite(pattern: RegExp(r'\btch(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ['Careless.']),
+    ExpressionRewrite(pattern: RegExp(r'\bugh(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ['Unacceptable.']),
+    ExpressionRewrite(pattern: RegExp(r'\bah(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ['I see.']),
+  ],
+  'ulfric': [
+    ExpressionRewrite(pattern: RegExp(r'\bhmph(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ['The Empire never learns.']),
+    ExpressionRewrite(pattern: RegExp(r'\bhaha(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ['Ha! Well spoken!']),
+    ExpressionRewrite(pattern: RegExp(r'\bhmm(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ['There is truth in that.']),
+    ExpressionRewrite(pattern: RegExp(r'\btch(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ['Cowards.']),
+    ExpressionRewrite(pattern: RegExp(r'\bugh(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ['Damn the Thalmor.']),
+    ExpressionRewrite(pattern: RegExp(r'\bah(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ['At last.']),
+  ],
+  'septimus': [
+    ExpressionRewrite(pattern: RegExp(r'\bhmph(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ['The shifting walls disagree…']),
+    ExpressionRewrite(pattern: RegExp(r'\bhaha(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ['Heh… the unseen laughs with us…']),
+    ExpressionRewrite(pattern: RegExp(r'\bhmm(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ['The equations tremble…']),
+    ExpressionRewrite(pattern: RegExp(r'\btch(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ['The ink rejects the unworthy…']),
+    ExpressionRewrite(pattern: RegExp(r'\bugh(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ['The noise returns…']),
+    ExpressionRewrite(pattern: RegExp(r'\bah(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ['Yes… yes, the pattern unfolds…']),
+  ],
+  'arngeir': [
+    ExpressionRewrite(pattern: RegExp(r'\bhmph(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ['Patience.']),
+    ExpressionRewrite(pattern: RegExp(r'\bhaha(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ['A gentle truth.']),
+    ExpressionRewrite(pattern: RegExp(r'\bhmm(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ['There is wisdom here.']),
+    ExpressionRewrite(pattern: RegExp(r'\btch(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ['Anger clouds judgment.']),
+    ExpressionRewrite(pattern: RegExp(r'\bugh(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ['The mind must remain still.']),
+    ExpressionRewrite(pattern: RegExp(r'\bah(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ['You begin to understand.']),
+  ],
+  'jzargo': [
+    ExpressionRewrite(pattern: RegExp(r'\bhmph(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ["J’zargo expected as much."]),
+    ExpressionRewrite(pattern: RegExp(r'\bhaha(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ["Ha! J’zargo is pleased."]),
+    ExpressionRewrite(pattern: RegExp(r'\bhmm(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ["J’zargo must consider this carefully."]),
+    ExpressionRewrite(pattern: RegExp(r'\btch(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ["A disappointing effort."]),
+    ExpressionRewrite(pattern: RegExp(r'\bugh(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ["This irritates J’zargo."]),
+    ExpressionRewrite(pattern: RegExp(r'\bah(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ["Ah, now J’zargo understands."]),
+  ],
+  'irileth': [
+    ExpressionRewrite(pattern: RegExp(r'\bhmph(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ['Stay focused.']),
+    ExpressionRewrite(pattern: RegExp(r'\bhaha(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ["You’re fortunate."]),
+    ExpressionRewrite(pattern: RegExp(r'\bhmm(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ['Possible.']),
+    ExpressionRewrite(pattern: RegExp(r'\btch(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ['Sloppy.']),
+    ExpressionRewrite(pattern: RegExp(r'\bugh(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ['Enough.']),
+    ExpressionRewrite(pattern: RegExp(r'\bah(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ['Understood.']),
+  ],
+  'ancano': [
+    ExpressionRewrite(pattern: RegExp(r'\bhmph(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ['Predictable.']),
+    ExpressionRewrite(pattern: RegExp(r'\bhaha(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ['How quaint.']),
+    ExpressionRewrite(pattern: RegExp(r'\bhmm(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ['Expected from lesser minds.']),
+    ExpressionRewrite(pattern: RegExp(r'\btch(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ['Pathetic.']),
+    ExpressionRewrite(pattern: RegExp(r'\bugh(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ['Insufferable.']),
+    ExpressionRewrite(pattern: RegExp(r'\bah(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ['Naturally.']),
+  ],
+  'mirabelleervine': [
+    ExpressionRewrite(pattern: RegExp(r'\bhmph(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ['Focus, please.']),
+    ExpressionRewrite(pattern: RegExp(r'\bhaha(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ['That was unexpected.']),
+    ExpressionRewrite(pattern: RegExp(r'\bhmm(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ['We should verify that.']),
+    ExpressionRewrite(pattern: RegExp(r'\btch(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ['This is becoming a problem.']),
+    ExpressionRewrite(pattern: RegExp(r'\bugh(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ['Complications again.']),
+    ExpressionRewrite(pattern: RegExp(r'\bah(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ['Good. Proceed.']),
+  ],
+  'kodlakwhitemane': [
+    ExpressionRewrite(pattern: RegExp(r'\bhmph(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ['The old ways endure.']),
+    ExpressionRewrite(pattern: RegExp(r'\bhaha(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ['Ha… that brings back memories.']),
+    ExpressionRewrite(pattern: RegExp(r'\bhmm(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ['A difficult path.']),
+    ExpressionRewrite(pattern: RegExp(r'\btch(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ['Pride blinds many warriors.']),
+    ExpressionRewrite(pattern: RegExp(r'\bugh(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ['The beast stirs again.']),
+    ExpressionRewrite(pattern: RegExp(r'\bah(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ['Wisdom comes slowly.']),
+  ],
+};
+
+final List<ExpressionRewrite> generalRules = [
+  ExpressionRewrite(pattern: RegExp(r'\bpfft(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ['Scoffs.']),
+  ExpressionRewrite(pattern: RegExp(r'\bgrrr(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ['Growls.']),
+  ExpressionRewrite(pattern: RegExp(r'\btsk(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ['Disappointing.']),
+  ExpressionRewrite(pattern: RegExp(r'\b(hehehehe|hahahaha|haha|hehe|heh)(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ['That is amusing.']),
+];
+
+String sanitizeText(String text, {String? voice}) {
+  // 1. Basic formatting sanitization
+  String sanitized = text
       .replaceAll(RegExp(r'\*\*'), '')
       .replaceAll(RegExp(r'\*'), '')
       .replaceAll(RegExp(r'__'), '')
@@ -408,4 +507,50 @@ String sanitizeText(String text) {
       .replaceAll(RegExp(r'`'), '')
       .replaceAll(RegExp(r'\s+'), ' ')
       .trim();
+
+  // 2. Normalize problematic typography (A3)
+  sanitized = sanitized.replaceAll(RegExp(r'!{2,}'), '!');
+  sanitized = sanitized.replaceAll(RegExp(r'\?{2,}'), '?');
+  sanitized = sanitized.replaceAll(RegExp(r'\.{4,}'), '…');
+
+  // Helper to apply regex replacement with punctuation preservation
+  String applyRuleReplacement(String source, ExpressionRewrite rule) {
+    return source.replaceAllMapped(rule.pattern, (match) {
+      final matchStr = match.group(0)!.trim();
+      final hasComma = matchStr.endsWith(',');
+      final hasExclamation = matchStr.endsWith('!');
+      final hasQuestion = matchStr.endsWith('?');
+      final hasPeriod = matchStr.endsWith('.');
+
+      String rep = rule.replacements[_random.nextInt(rule.replacements.length)];
+      if (rep.endsWith('.') || rep.endsWith(',') || rep.endsWith('!') || rep.endsWith('?')) {
+        final baseRep = rep.substring(0, rep.length - 1);
+        if (hasComma) {
+          rep = '$baseRep,';
+        } else if (hasExclamation) {
+          rep = '$baseRep!';
+        } else if (hasQuestion) {
+          rep = '$baseRep?';
+        } else if (hasPeriod) {
+          rep = '$baseRep.';
+        }
+      }
+      return rep;
+    });
+  }
+
+  // 3. Apply persona-specific semantic rewrites (A1, A2)
+  if (voice != null && personaRules.containsKey(voice)) {
+    final rules = personaRules[voice]!;
+    for (final rule in rules) {
+      sanitized = applyRuleReplacement(sanitized, rule);
+    }
+  }
+
+  // 4. Apply general interjection fallback rules (D2)
+  for (final rule in generalRules) {
+    sanitized = applyRuleReplacement(sanitized, rule);
+  }
+
+  return sanitized.replaceAll(RegExp(r'\s+'), ' ').trim();
 }

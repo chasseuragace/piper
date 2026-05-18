@@ -231,7 +231,7 @@ class HttpMcpServer {
       if (workspaceId == null || workspaceId.trim().isEmpty) {
         throw Exception('Missing or invalid argument: workspaceId must be a non-empty string path.');
       }
-      final sanitizedText = sanitizeText(text);
+      final sanitizedText = sanitizeText(text, voice: voice);
 
       // Read logs *before* adding the current one, so logs represent past context for feedback
       final logs = await readRecentLogs(workspaceId);

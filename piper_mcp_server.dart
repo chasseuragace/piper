@@ -251,7 +251,7 @@ Future<Map<String, dynamic>> _handleCallTool(
     throw Exception('Invalid voice: $voice');
   }
 
-  final sanitizedText = sanitizeText(text);
+  final sanitizedText = sanitizeText(text, voice: voice);
 
   // Read logs *before* adding the current one, so logs represent past context for feedback
   final logs = await readRecentLogs(workspaceId);
