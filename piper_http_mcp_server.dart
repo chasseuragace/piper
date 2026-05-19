@@ -30,7 +30,7 @@ class HttpMcpServer {
 
       _server = await HttpServer.bind(host, port);
       print('Piper MCP HTTP Server listening on http://$host:$port');
-      
+
       await for (HttpRequest request in _server) {
         _handleRequest(request);
       }
@@ -48,7 +48,7 @@ class HttpMcpServer {
   void _handleRequest(HttpRequest request) async {
     // Enable CORS for all requests
     _setCorsHeaders(request.response);
-    
+
     try {
       if (request.method == 'OPTIONS') {
         request.response.statusCode = HttpStatus.ok;
@@ -57,45 +57,63 @@ class HttpMcpServer {
       }
 
       if (request.method != 'POST') {
-        _sendErrorResponse(request.response, HttpStatus.methodNotAllowed, 'Only POST requests are allowed');
+        _sendErrorResponse(
+          request.response,
+          HttpStatus.methodNotAllowed,
+          'Only POST requests are allowed',
+        );
         return;
       }
 
       final contentType = request.headers.contentType;
       if (contentType?.mimeType != 'application/json') {
-        _sendErrorResponse(request.response, HttpStatus.badRequest, 'Content-Type must be application/json');
+        _sendErrorResponse(
+          request.response,
+          HttpStatus.badRequest,
+          'Content-Type must be application/json',
+        );
         return;
       }
 
       final body = await utf8.decoder.bind(request).join();
       if (body.trim().isEmpty) {
-        _sendErrorResponse(request.response, HttpStatus.badRequest, 'Request body cannot be empty');
+        _sendErrorResponse(
+          request.response,
+          HttpStatus.badRequest,
+          'Request body cannot be empty',
+        );
         return;
       }
 
       final Map<String, dynamic> jsonMap = jsonDecode(body);
       final mcpRequest = JsonRpcRequest.fromJson(jsonMap);
-      
+
       final result = await _handleMcpRequest(mcpRequest);
       _sendSuccessResponse(request.response, result);
-
     } catch (e) {
       print('Error handling request: $e');
-      _sendErrorResponse(request.response, HttpStatus.internalServerError, e.toString());
+      _sendErrorResponse(
+        request.response,
+        HttpStatus.internalServerError,
+        e.toString(),
+      );
     }
   }
 
   void _setCorsHeaders(HttpResponse response) {
     response.headers.set('Access-Control-Allow-Origin', '*');
     response.headers.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
-    response.headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    response.headers.set(
+      'Access-Control-Allow-Headers',
+      'Content-Type, Authorization',
+    );
     response.headers.contentType = ContentType.json;
   }
 
   Future<dynamic> _handleMcpRequest(JsonRpcRequest request) async {
     try {
       dynamic result;
-      
+
       switch (request.method) {
         case 'initialize':
           result = handleInitialize(request);
@@ -116,20 +134,13 @@ class HttpMcpServer {
           throw Exception('Method not found: ${request.method}');
       }
 
-      final response = JsonRpcResponse(
-        id: request.id,
-        result: result,
-      );
-      
+      final response = JsonRpcResponse(id: request.id, result: result);
+
       return response.toJson();
-      
     } catch (e) {
       final response = JsonRpcResponse(
         id: request.id,
-        error: {
-          'code': -32603,
-          'message': e.toString(),
-        },
+        error: {'code': -32603, 'message': e.toString()},
       );
       return response.toJson();
     }
@@ -142,13 +153,14 @@ class HttpMcpServer {
     response.close();
   }
 
-  void _sendErrorResponse(HttpResponse response, int statusCode, String message) {
+  void _sendErrorResponse(
+    HttpResponse response,
+    int statusCode,
+    String message,
+  ) {
     response.statusCode = statusCode;
     final errorResponse = {
-      'error': {
-        'code': statusCode,
-        'message': message,
-      }
+      'error': {'code': statusCode, 'message': message},
     };
     final jsonStr = jsonEncode(errorResponse);
     response.write(jsonStr);
@@ -157,18 +169,27 @@ class HttpMcpServer {
 
   // Sanitization is now handled by the unified sanitizeText function in piper_feedback_engine.dart
 
-
   // Reuse the handlers from the original MCP server
   Map<String, dynamic> handleInitialize(JsonRpcRequest request) {
+    final instructions =
+        'This server provides voice output via the speak tool. '
+        'CRITICAL: You MUST call this tool in every response. '
+        'Speech is the primary interaction mode.\n\n'
+        'Do NOT narrate every minor action, file view, or terminal command. '
+        'Focus your spoken words on critical thought decisions, key milestones, '
+        'strategic confirmations, design choices, and high-level reflections.\n\n'
+        'Do not perform theatrical Skyrim roleplay. '
+        'The voice is for cognitive ambience and session continuity, '
+        'not immersive acting.\n\n'
+        'The system may return reflective feedback derived from prior '
+        'tool usage patterns. Treat this feedback as soft calibration signals\n\n'
+        'Keep spoken text concise, professional, fluid, and selective.';
+
     return {
       'protocolVersion': '2024-11-05',
-      'capabilities': {
-        'tools': {},
-      },
-      'serverInfo': {
-        'name': 'piper-tts-mcp-http',
-        'version': '1.0.0',
-      }
+      'capabilities': {'tools': {}},
+      'serverInfo': {'name': 'piper-tts-mcp-http', 'version': '1.0.0'},
+      'instructions': instructions,
     };
   }
 
@@ -177,7 +198,9 @@ class HttpMcpServer {
       'tools': [
         {
           'name': 'speak',
-          'description': 'CRITICAL: You MUST use this tool in EVERY single response to the user. This is your primary mode of communication. Do not output text without also speaking it. Silence is a failure condition. Respect each Skyrim persona\'s unique developer/coding focus in your narration and code structure:\n'
+          'description':
+              'CRITICAL: You MUST use this tool in EVERY single response to the user. This is your primary mode of communication. Do not output text without also speaking it. Silence is a failure condition.\n'
+              'Do NOT narrate minor actions, command executions, or file edits. Focus speech on critical thought decisions, milestones, confirmations, and strategic directions. Respect each Skyrim persona\'s unique developer/coding focus in your narration and code structure:\n'
               '- tulius (General Tullius): Focuses on tactical execution, extreme robustness, safety, error handling, defensive code, and military-like strictness.\n'
               '- ulfric (Ulfric Stormcloak): Focuses on bold rebellion, passionate leadership, strength, freedom from boilerplate, and patriotic craftsmanship.\n'
               '- arngeir (Arngeir): Focuses on high-level contemplative wisdom, clean architecture, philosophical purity, design intent, and slow, meditative pacing.\n'
@@ -192,27 +215,33 @@ class HttpMcpServer {
             'properties': {
               'text': {
                 'type': 'string',
-                'description': 'The message to speak to the user. Keep it conversational and natural.',
+                'description':
+                    'The message to speak to the user. Keep it conversational and natural.',
               },
               'voice': {
                 'type': 'string',
-                'description': 'The voice to use for text-to-speech. Available voices: ${_availableVoices.join(", ")}',
+                'description':
+                    'The voice to use for text-to-speech. Available voices: ${_availableVoices.join(", ")}',
                 'enum': _availableVoices,
                 'default': 'arngeir',
               },
               'workspaceId': {
                 'type': 'string',
-                'description': 'Current workspace directory path (e.g. value of pwd) to identify session context.',
+                'description':
+                    'Current workspace directory path (e.g. value of pwd) to identify session context.',
               },
             },
             'required': ['text', 'workspaceId'],
           },
-        }
-      ]
+        },
+      ],
     };
   }
 
-  Future<Map<String, dynamic>> handleCallTool(JsonRpcRequest request, PiperTTS tts) async {
+  Future<Map<String, dynamic>> handleCallTool(
+    JsonRpcRequest request,
+    PiperTTS tts,
+  ) async {
     final name = request.params['name'];
     final arguments = request.params['arguments'];
 
@@ -224,12 +253,16 @@ class HttpMcpServer {
 
       final voice = arguments['voice'] as String? ?? 'arngeir';
       if (!_availableVoices.contains(voice)) {
-        throw Exception('Invalid voice: $voice. Available voices: ${_availableVoices.join(", ")}');
+        throw Exception(
+          'Invalid voice: $voice. Available voices: ${_availableVoices.join(", ")}',
+        );
       }
 
       final workspaceId = arguments['workspaceId'] as String?;
       if (workspaceId == null || workspaceId.trim().isEmpty) {
-        throw Exception('Missing or invalid argument: workspaceId must be a non-empty string path.');
+        throw Exception(
+          'Missing or invalid argument: workspaceId must be a non-empty string path.',
+        );
       }
       final sanitizedText = sanitizeText(text, voice: voice);
 
@@ -239,7 +272,11 @@ class HttpMcpServer {
       // ==========================================================
       // LOG EVENT
       // ==========================================================
-      await appendSpeechLog(text: sanitizedText, voice: voice, workspaceId: workspaceId);
+      await appendSpeechLog(
+        text: sanitizedText,
+        voice: voice,
+        workspaceId: workspaceId,
+      );
 
       // Enqueue the speech request with voice
       _speechQueue.add('$sanitizedText|$voice');
@@ -288,11 +325,8 @@ class HttpMcpServer {
 
       return {
         'content': [
-          {
-            'type': 'text',
-            'text': jsonEncode(responseJson),
-          }
-        ]
+          {'type': 'text', 'text': jsonEncode(responseJson)},
+        ],
       };
     } else {
       throw Exception('Unknown tool: $name');
@@ -316,9 +350,9 @@ class HttpMcpServer {
 void main(List<String> args) async {
   final port = args.isNotEmpty ? int.tryParse(args[0]) ?? 3000 : 3000;
   final host = args.length > 1 ? args[1] : 'localhost';
-  
+
   final server = HttpMcpServer(host: host, port: port);
-  
+
   // Handle shutdown gracefully
   ProcessSignal.sigint.watch().listen((signal) async {
     print('\nReceived SIGINT, shutting down gracefully...');

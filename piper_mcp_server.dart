@@ -150,7 +150,6 @@ void _sendResponse(JsonRpcResponse response) {
 
 // Sanitization is now handled by the unified sanitizeText function in piper_feedback_engine.dart
 
-
 // ============================================================
 // INITIALIZE
 // ============================================================
@@ -158,17 +157,17 @@ void _sendResponse(JsonRpcResponse response) {
 Map<String, dynamic> _handleInitialize(JsonRpcRequest request) {
   final instructions =
       'This server provides voice output via the speak tool. '
-      'You MUST call this tool in every response. '
+      'CRITICAL: You MUST call this tool in every response. '
       'Speech is the primary interaction mode.\n\n'
-      'Narrate intent, reasoning direction, decisions, discoveries, '
-      'uncertainty, and transitions naturally.\n\n'
+      'Do NOT narrate every minor action, file view, or terminal command. '
+      'Focus your spoken words on critical thought decisions, key milestones, '
+      'strategic confirmations, design choices, and high-level reflections.\n\n'
       'Do not perform theatrical Skyrim roleplay. '
       'The voice is for cognitive ambience and session continuity, '
       'not immersive acting.\n\n'
       'The system may return reflective feedback derived from prior '
-      'tool usage patterns. Treat this feedback as soft calibration '
-      'signals, not strict instructions.\n\n'
-      'Keep spoken text concise and fluid.';
+      'tool usage patterns. Treat this feedback as soft calibration signals\n\n'
+      'Keep spoken text concise, professional, fluid, and selective.';
 
   return {
     'protocolVersion': '2024-11-05',
@@ -188,7 +187,8 @@ Map<String, dynamic> _handleListTools() {
       {
         'name': 'speak',
         'description':
-            'CRITICAL: You MUST use this tool in EVERY single response to the user. This is your primary mode of communication. Do not output text without also speaking it. Silence is a failure condition. Respect each Skyrim persona\'s unique developer/coding focus in your narration and code structure:\n'
+            'CRITICAL: You MUST use this tool in EVERY single response to the user. This is your primary mode of communication. Do not output text without also speaking it. Silence is a failure condition.\n'
+            'Do NOT narrate minor actions, command executions, or file edits. Focus speech on critical thought decisions, milestones, confirmations, and strategic directions. Respect each Skyrim persona\'s unique developer/coding focus in your narration and code structure:\n'
             '- tulius (General Tullius): Focuses on tactical execution, extreme robustness, safety, error handling, defensive code, and military-like strictness.\n'
             '- ulfric (Ulfric Stormcloak): Focuses on bold rebellion, passionate leadership, strength, freedom from boilerplate, and patriotic craftsmanship.\n'
             '- arngeir (Arngeir): Focuses on high-level contemplative wisdom, clean architecture, philosophical purity, design intent, and slow, meditative pacing.\n'
@@ -209,7 +209,8 @@ Map<String, dynamic> _handleListTools() {
             },
             'workspaceId': {
               'type': 'string',
-              'description': 'Current workspace directory path (e.g. value of pwd) to identify session context.',
+              'description':
+                  'Current workspace directory path (e.g. value of pwd) to identify session context.',
             },
           },
           'required': ['text', 'workspaceId'],
@@ -244,7 +245,9 @@ Future<Map<String, dynamic>> _handleCallTool(
 
   final workspaceId = arguments['workspaceId'] as String?;
   if (workspaceId == null || workspaceId.trim().isEmpty) {
-    throw Exception('Missing or invalid argument: workspaceId must be a non-empty string path.');
+    throw Exception(
+      'Missing or invalid argument: workspaceId must be a non-empty string path.',
+    );
   }
 
   if (!_availableVoices.contains(voice)) {
@@ -260,7 +263,11 @@ Future<Map<String, dynamic>> _handleCallTool(
   // LOG EVENT
   // ==========================================================
 
-  await appendSpeechLog(text: sanitizedText, voice: voice, workspaceId: workspaceId);
+  await appendSpeechLog(
+    text: sanitizedText,
+    voice: voice,
+    workspaceId: workspaceId,
+  );
 
   // ==========================================================
   // QUEUE SPEECH

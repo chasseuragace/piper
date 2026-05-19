@@ -11,28 +11,40 @@ import 'piper_tts.dart';
 // ============================================================
 
 // Number of recent logs to inspect
-const int feedbackWindowSize = 8;
+const int feedbackWindowSize = 10;
 
 final Random _random = Random();
 
 // Skyrim voice personality descriptions for contextual feedback prompt
 const Map<String, String> voiceDescriptions = {
-  'tulius': 'General Tullius, stern, tactical Imperial military commander. Serious, disciplined, pragmatic, speaks with authority.',
-  'ulfric': 'Ulfric Stormcloak, bold Nordic leader, passionate rebel, patriotic, deeply emotional, resonates with strength, honor, and freedom.',
-  'septimus': 'Septimus Signus, obsessive, eccentric scholar of the Elder Scrolls. Brilliant but highly unstable, fast-paced, paranoid, speaks in cryptic metaphors.',
-  'arngeir': 'Arngeir, wise, calm, and serene Greybeard monk. Extremely peaceful, meditative, speaks slowly, with deep insight, patience, and profound wisdom.',
-  'jzargo': 'J\'zargo, arrogant, ambitious Khajiit mage-apprentice. Proud, refers to himself in the third person, competitive, eager to prove his superior magical prowess.',
-  'irileth': 'Irileth, fierce, hyper-vigilant Housecarl. Fiercely loyal, direct, highly protective, sharp-tongued, pragmatic, no-nonsense warrior.',
-  'ancano': 'Ancano, haughty, condescending Thalmor advisor. Extremely arrogant, superior, scheming, sneers, speaks with smooth but dripping distain.',
-  'mirabelleervine': 'Mirabelle Ervine, efficient, strict Master Wizard of the College. Organized, professional, highly competent, nurturing but demands excellence and protocol.',
-  'kodlakwhitemane': 'Kodlak Whitemane, respected Harbinger of the Companions. Honorable, fatherly, wise, ancient warrior who speaks of inner honor, spiritual cleanliness, and the old ways.',
-  'nepali': 'A local guide speaking with a warm, friendly, helpful Nepali accent and demeanor.',
+  'tulius':
+      'General Tullius, stern, tactical Imperial military commander. Serious, disciplined, pragmatic, speaks with authority.',
+  'ulfric':
+      'Ulfric Stormcloak, bold Nordic leader, passionate rebel, patriotic, deeply emotional, resonates with strength, honor, and freedom.',
+  'septimus':
+      'Septimus Signus, obsessive, eccentric scholar of the Elder Scrolls. Brilliant but highly unstable, fast-paced, paranoid, speaks in cryptic metaphors.',
+  'arngeir':
+      'Arngeir, wise, calm, and serene Greybeard monk. Extremely peaceful, meditative, speaks slowly, with deep insight, patience, and profound wisdom.',
+  'jzargo':
+      'J\'zargo, arrogant, ambitious Khajiit mage-apprentice. Proud, refers to himself in the third person, competitive, eager to prove his superior magical prowess.',
+  'irileth':
+      'Irileth, fierce, hyper-vigilant Housecarl. Fiercely loyal, direct, highly protective, sharp-tongued, pragmatic, no-nonsense warrior.',
+  'ancano':
+      'Ancano, haughty, condescending Thalmor advisor. Extremely arrogant, superior, scheming, sneers, speaks with smooth but dripping distain.',
+  'mirabelleervine':
+      'Mirabelle Ervine, efficient, strict Master Wizard of the College. Organized, professional, highly competent, nurturing but demands excellence and protocol.',
+  'kodlakwhitemane':
+      'Kodlak Whitemane, respected Harbinger of the Companions. Honorable, fatherly, wise, ancient warrior who speaks of inner honor, spiritual cleanliness, and the old ways.',
+  'nepali':
+      'A local guide speaking with a warm, friendly, helpful Nepali accent and demeanor.',
 };
 
 // Loads session state of last voices from session_state.json
 Future<Map<String, String>> loadLastVoices() async {
   final scriptDir = PiperTTS.getScriptDir();
-  final file = File(path.join(scriptDir, 'workspace_logs', 'session_state.json'));
+  final file = File(
+    path.join(scriptDir, 'workspace_logs', 'session_state.json'),
+  );
   if (!await file.exists()) {
     return {};
   }
@@ -63,7 +75,9 @@ Future<void> saveLastVoice(String workspaceId, String voice) async {
       final content = await file.readAsString();
       if (content.trim().isNotEmpty) {
         final Map<String, dynamic> jsonMap = jsonDecode(content);
-        currentStates = jsonMap.map((key, value) => MapEntry(key, value.toString()));
+        currentStates = jsonMap.map(
+          (key, value) => MapEntry(key, value.toString()),
+        );
       }
     } catch (_) {}
   }
@@ -114,7 +128,6 @@ File getLogFileForWorkspace(String workspaceId) {
   return File(path.join(logsDir.path, filename));
 }
 
-
 // ============================================================
 // LOGGING
 // ============================================================
@@ -150,18 +163,24 @@ Future<void> compactLogsIfNeeded(String workspaceId) async {
     final nonEmptyLines = lines.where((e) => e.trim().isNotEmpty).toList();
 
     // Trigger compaction if we have > 10 entries OR total characters > 3000
-    final totalChars = nonEmptyLines.map((e) => e.length).fold(0, (a, b) => a + b);
-    if (nonEmptyLines.length <= 10 && totalChars <= 3000) {
+    final totalChars = nonEmptyLines
+        .map((e) => e.length)
+        .fold(0, (a, b) => a + b);
+    if (nonEmptyLines.length <= 30 && totalChars <= 9000) {
       return;
     }
 
     // Must have at least 4 entries to meaningfully compact
     if (nonEmptyLines.length < 4) return;
 
-    stderr.writeln('Compacting speech logs for workspace $workspaceId. Total lines: ${nonEmptyLines.length}, chars: $totalChars');
+    stderr.writeln(
+      'Compacting speech logs for workspace $workspaceId. Total lines: ${nonEmptyLines.length}, chars: $totalChars',
+    );
 
     // Parse all log entries
-    final entries = nonEmptyLines.map((e) => jsonDecode(e) as Map<String, dynamic>).toList();
+    final entries = nonEmptyLines
+        .map((e) => jsonDecode(e) as Map<String, dynamic>)
+        .toList();
 
     // We keep the last 3 entries raw, and roll up everything else (including any previous summaries)
     final keepCount = 3;
@@ -169,18 +188,20 @@ Future<void> compactLogsIfNeeded(String workspaceId) async {
     final keepEntries = entries.sublist(entries.length - keepCount);
 
     // Format the rollup entries for the AI
-    final rollupSummary = rollupEntries.map((e) {
-      final voice = e['voice'] ?? 'unknown';
-      final text = e['text'] ?? '';
-      return '[$voice]: "$text"';
-    }).join('\n');
+    final rollupSummary = rollupEntries
+        .map((e) {
+          final voice = e['voice'] ?? 'unknown';
+          final text = e['text'] ?? '';
+          return '[$voice]: "$text"';
+        })
+        .join('\n');
 
     String summaryText = '';
     final client = getAIClient();
     if (client != null) {
       final systemPrompt =
           'You are the Sigil Stone Cognitive Compactor.\n'
-          'Your job is to condense a sequence of speech log entries from a pair-programming session into a single, extremely brief summary statement (1-2 sentences).\n'
+          'Your job is to condense a sequence of speech log entries from a pair-programming session into a single, extremely brief summary statement (2-5 sentences).\n'
           'Identify what tasks were active, which voice personas spoke, and their primary focus or outcomes.\n'
           'Keep your output professional, concise, and dense with context.\n\n'
           'OUTPUT FORMAT:\n'
@@ -206,7 +227,8 @@ Future<void> compactLogsIfNeeded(String workspaceId) async {
     // Fallback if AI call failed or returned empty
     if (summaryText.isEmpty) {
       final voices = rollupEntries.map((e) => e['voice']).toSet().join(', ');
-      summaryText = 'Development continued with contributions from active voices ($voices) focusing on coding tasks.';
+      summaryText =
+          'Development continued with contributions from active voices ($voices) focusing on coding tasks.';
     }
 
     final compactedSummaryEntry = {
@@ -218,7 +240,10 @@ Future<void> compactLogsIfNeeded(String workspaceId) async {
     };
 
     // Construct the compacted lines
-    final List<Map<String, dynamic>> compactedEntries = [compactedSummaryEntry, ...keepEntries];
+    final List<Map<String, dynamic>> compactedEntries = [
+      compactedSummaryEntry,
+      ...keepEntries,
+    ];
 
     // Atomically write compacted logs using a temporary file (as Mirabelle Ervine protocol dictates!)
     final tempFile = File('${file.path}.tmp');
@@ -229,7 +254,9 @@ Future<void> compactLogsIfNeeded(String workspaceId) async {
     await tempFile.writeAsString(buffer.toString());
     await tempFile.rename(file.path);
 
-    stderr.writeln('Compaction transaction completed successfully for workspace $workspaceId.');
+    stderr.writeln(
+      'Compaction transaction completed successfully for workspace $workspaceId.',
+    );
   } catch (e) {
     stderr.writeln('Error compacting speech logs: $e');
   }
@@ -283,13 +310,12 @@ Future<Map<String, dynamic>?> generateRealFeedback({
         '- Irileth: Vigilance, threat assessment (bugs/security vulnerabilities), and defensive testing under pressure.\n'
         '- Kodlak: Refactoring technical debt, clean architecture, honorable craftsmanship, and inner cleanliness of code.\n'
         '- Ancano: Haughty elitism, supreme refinement of code, Thalmor-style absolute control over complexity.\n'
-        '- Nepali: Warm, highly friendly, collaborative guide.\n\n'
         'Your goal is to look at the narration history of what the previous personas said in the logs, and write the internal monologue guidance for the incoming persona as they "take over the microphone."\n'
         'This guidance must suggest how the incoming voice will shift their active cognitive focus (e.g. from the previous voice\'s focus to their own preferred style like testing, architecture, or optimization).\n\n'
         'OUTPUT FORMAT:\n'
         'You must return ONLY a single valid JSON object containing exactly the following keys:\n'
         '- "inferredMode": "verbose" (if past logs are wordy), "compressed" (if logs are too short/fragmented), or "stable" (if balanced).\n'
-        '- "guidance": A 1-sentence internal monologue coaching nudge written in the distinct tone and perspective of the incoming voice. It should reference the transition from the previous voice\'s focus to theirs, and outline what they will prioritize next in the workspace. Do not do theatrical roleplay; it is a professional, immersive programming guide.\n'
+        '- "guidance": A 1-2 sentence internal monologue coaching nudge written in the distinct tone and perspective of the incoming voice. It should reference the transition from the previous voice\'s focus to theirs, and outline what they will prioritize next in the workspace. Do not do theatrical roleplay; it is a professional, immersive programming guide.\n'
         '- "personaAlignment": A 1-word alignment status of the incoming voice ("strong", "moderate", "shifting").\n\n'
         'CRITICAL: Return ONLY raw JSON. Do not include markdown backticks or formatting.';
 
@@ -298,7 +324,8 @@ Future<Map<String, dynamic>?> generateRealFeedback({
         : logs.map((log) => '- [${log['voice']}]: "${log['text']}"').join('\n');
 
     final previousVoice = logs.isEmpty ? 'none' : logs.last['voice'];
-    final incomingPersonaDesc = voiceDescriptions[voice] ?? 'A Skyrim character persona.';
+    final incomingPersonaDesc =
+        voiceDescriptions[voice] ?? 'A Skyrim character persona.';
 
     final prompt =
         'Workspace ID: "$workspaceId"\n'
@@ -321,7 +348,8 @@ Future<Map<String, dynamic>?> generateRealFeedback({
         'workspaceId': workspaceId,
         'inferredMode': jsonResult['inferredMode'] ?? 'stable',
         'recentMessages': logs.length,
-        'guidance': jsonResult['guidance'] ?? 'maintain current narration pacing',
+        'guidance':
+            jsonResult['guidance'] ?? 'maintain current narration pacing',
         'personaAlignment': jsonResult['personaAlignment'] ?? voice,
       };
     }
@@ -395,84 +423,261 @@ class ExpressionRewrite {
 
 final Map<String, List<ExpressionRewrite>> personaRules = {
   'tulius': [
-    ExpressionRewrite(pattern: RegExp(r'\bhmph(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ['As expected.']),
-    ExpressionRewrite(pattern: RegExp(r'\bhaha(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ['Amusing.']),
-    ExpressionRewrite(pattern: RegExp(r'\bhmm(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ['Let me consider this.']),
-    ExpressionRewrite(pattern: RegExp(r'\btch(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ['Careless.']),
-    ExpressionRewrite(pattern: RegExp(r'\bugh(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ['Unacceptable.']),
-    ExpressionRewrite(pattern: RegExp(r'\bah(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ['I see.']),
+    ExpressionRewrite(
+      pattern: RegExp(r'\bhmph(?:\s*[,.!?]|\b)', caseSensitive: false),
+      replacements: ['As expected.'],
+    ),
+    ExpressionRewrite(
+      pattern: RegExp(r'\bhaha(?:\s*[,.!?]|\b)', caseSensitive: false),
+      replacements: ['Amusing.'],
+    ),
+    ExpressionRewrite(
+      pattern: RegExp(r'\bhmm(?:\s*[,.!?]|\b)', caseSensitive: false),
+      replacements: ['Let me consider this.'],
+    ),
+    ExpressionRewrite(
+      pattern: RegExp(r'\btch(?:\s*[,.!?]|\b)', caseSensitive: false),
+      replacements: ['Careless.'],
+    ),
+    ExpressionRewrite(
+      pattern: RegExp(r'\bugh(?:\s*[,.!?]|\b)', caseSensitive: false),
+      replacements: ['Unacceptable.'],
+    ),
+    ExpressionRewrite(
+      pattern: RegExp(r'\bah(?:\s*[,.!?]|\b)', caseSensitive: false),
+      replacements: ['I see.'],
+    ),
   ],
   'ulfric': [
-    ExpressionRewrite(pattern: RegExp(r'\bhmph(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ['The Empire never learns.']),
-    ExpressionRewrite(pattern: RegExp(r'\bhaha(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ['Ha! Well spoken!']),
-    ExpressionRewrite(pattern: RegExp(r'\bhmm(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ['There is truth in that.']),
-    ExpressionRewrite(pattern: RegExp(r'\btch(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ['Cowards.']),
-    ExpressionRewrite(pattern: RegExp(r'\bugh(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ['Damn the Thalmor.']),
-    ExpressionRewrite(pattern: RegExp(r'\bah(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ['At last.']),
+    ExpressionRewrite(
+      pattern: RegExp(r'\bhmph(?:\s*[,.!?]|\b)', caseSensitive: false),
+      replacements: ['The Empire never learns.'],
+    ),
+    ExpressionRewrite(
+      pattern: RegExp(r'\bhaha(?:\s*[,.!?]|\b)', caseSensitive: false),
+      replacements: ['Ha! Well spoken!'],
+    ),
+    ExpressionRewrite(
+      pattern: RegExp(r'\bhmm(?:\s*[,.!?]|\b)', caseSensitive: false),
+      replacements: ['There is truth in that.'],
+    ),
+    ExpressionRewrite(
+      pattern: RegExp(r'\btch(?:\s*[,.!?]|\b)', caseSensitive: false),
+      replacements: ['Cowards.'],
+    ),
+    ExpressionRewrite(
+      pattern: RegExp(r'\bugh(?:\s*[,.!?]|\b)', caseSensitive: false),
+      replacements: ['Damn the Thalmor.'],
+    ),
+    ExpressionRewrite(
+      pattern: RegExp(r'\bah(?:\s*[,.!?]|\b)', caseSensitive: false),
+      replacements: ['At last.'],
+    ),
   ],
   'septimus': [
-    ExpressionRewrite(pattern: RegExp(r'\bhmph(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ['The shifting walls disagree…']),
-    ExpressionRewrite(pattern: RegExp(r'\bhaha(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ['Heh… the unseen laughs with us…']),
-    ExpressionRewrite(pattern: RegExp(r'\bhmm(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ['The equations tremble…']),
-    ExpressionRewrite(pattern: RegExp(r'\btch(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ['The ink rejects the unworthy…']),
-    ExpressionRewrite(pattern: RegExp(r'\bugh(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ['The noise returns…']),
-    ExpressionRewrite(pattern: RegExp(r'\bah(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ['Yes… yes, the pattern unfolds…']),
+    ExpressionRewrite(
+      pattern: RegExp(r'\bhmph(?:\s*[,.!?]|\b)', caseSensitive: false),
+      replacements: ['The shifting walls disagree…'],
+    ),
+    ExpressionRewrite(
+      pattern: RegExp(r'\bhaha(?:\s*[,.!?]|\b)', caseSensitive: false),
+      replacements: ['Heh… the unseen laughs with us…'],
+    ),
+    ExpressionRewrite(
+      pattern: RegExp(r'\bhmm(?:\s*[,.!?]|\b)', caseSensitive: false),
+      replacements: ['The equations tremble…'],
+    ),
+    ExpressionRewrite(
+      pattern: RegExp(r'\btch(?:\s*[,.!?]|\b)', caseSensitive: false),
+      replacements: ['The ink rejects the unworthy…'],
+    ),
+    ExpressionRewrite(
+      pattern: RegExp(r'\bugh(?:\s*[,.!?]|\b)', caseSensitive: false),
+      replacements: ['The noise returns…'],
+    ),
+    ExpressionRewrite(
+      pattern: RegExp(r'\bah(?:\s*[,.!?]|\b)', caseSensitive: false),
+      replacements: ['Yes… yes, the pattern unfolds…'],
+    ),
   ],
   'arngeir': [
-    ExpressionRewrite(pattern: RegExp(r'\bhmph(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ['Patience.']),
-    ExpressionRewrite(pattern: RegExp(r'\bhaha(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ['A gentle truth.']),
-    ExpressionRewrite(pattern: RegExp(r'\bhmm(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ['There is wisdom here.']),
-    ExpressionRewrite(pattern: RegExp(r'\btch(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ['Anger clouds judgment.']),
-    ExpressionRewrite(pattern: RegExp(r'\bugh(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ['The mind must remain still.']),
-    ExpressionRewrite(pattern: RegExp(r'\bah(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ['You begin to understand.']),
+    ExpressionRewrite(
+      pattern: RegExp(r'\bhmph(?:\s*[,.!?]|\b)', caseSensitive: false),
+      replacements: ['Patience.'],
+    ),
+    ExpressionRewrite(
+      pattern: RegExp(r'\bhaha(?:\s*[,.!?]|\b)', caseSensitive: false),
+      replacements: ['A gentle truth.'],
+    ),
+    ExpressionRewrite(
+      pattern: RegExp(r'\bhmm(?:\s*[,.!?]|\b)', caseSensitive: false),
+      replacements: ['There is wisdom here.'],
+    ),
+    ExpressionRewrite(
+      pattern: RegExp(r'\btch(?:\s*[,.!?]|\b)', caseSensitive: false),
+      replacements: ['Anger clouds judgment.'],
+    ),
+    ExpressionRewrite(
+      pattern: RegExp(r'\bugh(?:\s*[,.!?]|\b)', caseSensitive: false),
+      replacements: ['The mind must remain still.'],
+    ),
+    ExpressionRewrite(
+      pattern: RegExp(r'\bah(?:\s*[,.!?]|\b)', caseSensitive: false),
+      replacements: ['You begin to understand.'],
+    ),
   ],
   'jzargo': [
-    ExpressionRewrite(pattern: RegExp(r'\bhmph(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ["J’zargo expected as much."]),
-    ExpressionRewrite(pattern: RegExp(r'\bhaha(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ["Ha! J’zargo is pleased."]),
-    ExpressionRewrite(pattern: RegExp(r'\bhmm(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ["J’zargo must consider this carefully."]),
-    ExpressionRewrite(pattern: RegExp(r'\btch(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ["A disappointing effort."]),
-    ExpressionRewrite(pattern: RegExp(r'\bugh(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ["This irritates J’zargo."]),
-    ExpressionRewrite(pattern: RegExp(r'\bah(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ["Ah, now J’zargo understands."]),
+    ExpressionRewrite(
+      pattern: RegExp(r'\bhmph(?:\s*[,.!?]|\b)', caseSensitive: false),
+      replacements: ["J’zargo expected as much."],
+    ),
+    ExpressionRewrite(
+      pattern: RegExp(r'\bhaha(?:\s*[,.!?]|\b)', caseSensitive: false),
+      replacements: ["Ha! J’zargo is pleased."],
+    ),
+    ExpressionRewrite(
+      pattern: RegExp(r'\bhmm(?:\s*[,.!?]|\b)', caseSensitive: false),
+      replacements: ["J’zargo must consider this carefully."],
+    ),
+    ExpressionRewrite(
+      pattern: RegExp(r'\btch(?:\s*[,.!?]|\b)', caseSensitive: false),
+      replacements: ["A disappointing effort."],
+    ),
+    ExpressionRewrite(
+      pattern: RegExp(r'\bugh(?:\s*[,.!?]|\b)', caseSensitive: false),
+      replacements: ["This irritates J’zargo."],
+    ),
+    ExpressionRewrite(
+      pattern: RegExp(r'\bah(?:\s*[,.!?]|\b)', caseSensitive: false),
+      replacements: ["Ah, now J’zargo understands."],
+    ),
   ],
   'irileth': [
-    ExpressionRewrite(pattern: RegExp(r'\bhmph(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ['Stay focused.']),
-    ExpressionRewrite(pattern: RegExp(r'\bhaha(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ["You’re fortunate."]),
-    ExpressionRewrite(pattern: RegExp(r'\bhmm(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ['Possible.']),
-    ExpressionRewrite(pattern: RegExp(r'\btch(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ['Sloppy.']),
-    ExpressionRewrite(pattern: RegExp(r'\bugh(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ['Enough.']),
-    ExpressionRewrite(pattern: RegExp(r'\bah(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ['Understood.']),
+    ExpressionRewrite(
+      pattern: RegExp(r'\bhmph(?:\s*[,.!?]|\b)', caseSensitive: false),
+      replacements: ['Stay focused.'],
+    ),
+    ExpressionRewrite(
+      pattern: RegExp(r'\bhaha(?:\s*[,.!?]|\b)', caseSensitive: false),
+      replacements: ["You’re fortunate."],
+    ),
+    ExpressionRewrite(
+      pattern: RegExp(r'\bhmm(?:\s*[,.!?]|\b)', caseSensitive: false),
+      replacements: ['Possible.'],
+    ),
+    ExpressionRewrite(
+      pattern: RegExp(r'\btch(?:\s*[,.!?]|\b)', caseSensitive: false),
+      replacements: ['Sloppy.'],
+    ),
+    ExpressionRewrite(
+      pattern: RegExp(r'\bugh(?:\s*[,.!?]|\b)', caseSensitive: false),
+      replacements: ['Enough.'],
+    ),
+    ExpressionRewrite(
+      pattern: RegExp(r'\bah(?:\s*[,.!?]|\b)', caseSensitive: false),
+      replacements: ['Understood.'],
+    ),
   ],
   'ancano': [
-    ExpressionRewrite(pattern: RegExp(r'\bhmph(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ['Predictable.']),
-    ExpressionRewrite(pattern: RegExp(r'\bhaha(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ['How quaint.']),
-    ExpressionRewrite(pattern: RegExp(r'\bhmm(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ['Expected from lesser minds.']),
-    ExpressionRewrite(pattern: RegExp(r'\btch(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ['Pathetic.']),
-    ExpressionRewrite(pattern: RegExp(r'\bugh(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ['Insufferable.']),
-    ExpressionRewrite(pattern: RegExp(r'\bah(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ['Naturally.']),
+    ExpressionRewrite(
+      pattern: RegExp(r'\bhmph(?:\s*[,.!?]|\b)', caseSensitive: false),
+      replacements: ['Predictable.'],
+    ),
+    ExpressionRewrite(
+      pattern: RegExp(r'\bhaha(?:\s*[,.!?]|\b)', caseSensitive: false),
+      replacements: ['How quaint.'],
+    ),
+    ExpressionRewrite(
+      pattern: RegExp(r'\bhmm(?:\s*[,.!?]|\b)', caseSensitive: false),
+      replacements: ['Expected from lesser minds.'],
+    ),
+    ExpressionRewrite(
+      pattern: RegExp(r'\btch(?:\s*[,.!?]|\b)', caseSensitive: false),
+      replacements: ['Pathetic.'],
+    ),
+    ExpressionRewrite(
+      pattern: RegExp(r'\bugh(?:\s*[,.!?]|\b)', caseSensitive: false),
+      replacements: ['Insufferable.'],
+    ),
+    ExpressionRewrite(
+      pattern: RegExp(r'\bah(?:\s*[,.!?]|\b)', caseSensitive: false),
+      replacements: ['Naturally.'],
+    ),
   ],
   'mirabelleervine': [
-    ExpressionRewrite(pattern: RegExp(r'\bhmph(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ['Focus, please.']),
-    ExpressionRewrite(pattern: RegExp(r'\bhaha(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ['That was unexpected.']),
-    ExpressionRewrite(pattern: RegExp(r'\bhmm(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ['We should verify that.']),
-    ExpressionRewrite(pattern: RegExp(r'\btch(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ['This is becoming a problem.']),
-    ExpressionRewrite(pattern: RegExp(r'\bugh(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ['Complications again.']),
-    ExpressionRewrite(pattern: RegExp(r'\bah(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ['Good. Proceed.']),
+    ExpressionRewrite(
+      pattern: RegExp(r'\bhmph(?:\s*[,.!?]|\b)', caseSensitive: false),
+      replacements: ['Focus, please.'],
+    ),
+    ExpressionRewrite(
+      pattern: RegExp(r'\bhaha(?:\s*[,.!?]|\b)', caseSensitive: false),
+      replacements: ['That was unexpected.'],
+    ),
+    ExpressionRewrite(
+      pattern: RegExp(r'\bhmm(?:\s*[,.!?]|\b)', caseSensitive: false),
+      replacements: ['We should verify that.'],
+    ),
+    ExpressionRewrite(
+      pattern: RegExp(r'\btch(?:\s*[,.!?]|\b)', caseSensitive: false),
+      replacements: ['This is becoming a problem.'],
+    ),
+    ExpressionRewrite(
+      pattern: RegExp(r'\bugh(?:\s*[,.!?]|\b)', caseSensitive: false),
+      replacements: ['Complications again.'],
+    ),
+    ExpressionRewrite(
+      pattern: RegExp(r'\bah(?:\s*[,.!?]|\b)', caseSensitive: false),
+      replacements: ['Good. Proceed.'],
+    ),
   ],
   'kodlakwhitemane': [
-    ExpressionRewrite(pattern: RegExp(r'\bhmph(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ['The old ways endure.']),
-    ExpressionRewrite(pattern: RegExp(r'\bhaha(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ['Ha… that brings back memories.']),
-    ExpressionRewrite(pattern: RegExp(r'\bhmm(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ['A difficult path.']),
-    ExpressionRewrite(pattern: RegExp(r'\btch(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ['Pride blinds many warriors.']),
-    ExpressionRewrite(pattern: RegExp(r'\bugh(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ['The beast stirs again.']),
-    ExpressionRewrite(pattern: RegExp(r'\bah(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ['Wisdom comes slowly.']),
+    ExpressionRewrite(
+      pattern: RegExp(r'\bhmph(?:\s*[,.!?]|\b)', caseSensitive: false),
+      replacements: ['The old ways endure.'],
+    ),
+    ExpressionRewrite(
+      pattern: RegExp(r'\bhaha(?:\s*[,.!?]|\b)', caseSensitive: false),
+      replacements: ['Ha… that brings back memories.'],
+    ),
+    ExpressionRewrite(
+      pattern: RegExp(r'\bhmm(?:\s*[,.!?]|\b)', caseSensitive: false),
+      replacements: ['A difficult path.'],
+    ),
+    ExpressionRewrite(
+      pattern: RegExp(r'\btch(?:\s*[,.!?]|\b)', caseSensitive: false),
+      replacements: ['Pride blinds many warriors.'],
+    ),
+    ExpressionRewrite(
+      pattern: RegExp(r'\bugh(?:\s*[,.!?]|\b)', caseSensitive: false),
+      replacements: ['The beast stirs again.'],
+    ),
+    ExpressionRewrite(
+      pattern: RegExp(r'\bah(?:\s*[,.!?]|\b)', caseSensitive: false),
+      replacements: ['Wisdom comes slowly.'],
+    ),
   ],
 };
 
 final List<ExpressionRewrite> generalRules = [
-  ExpressionRewrite(pattern: RegExp(r'\bpfft(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ['Nonsense.', 'Hardly.']),
-  ExpressionRewrite(pattern: RegExp(r'\bgrrr(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ['Damn.', 'By the gods.']),
-  ExpressionRewrite(pattern: RegExp(r'\btsk(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ['Careless.', 'Disappointing.']),
-  ExpressionRewrite(pattern: RegExp(r'\b(hehehehe|hahahaha|haha|hehe|heh)(?:\s*[,.!?]|\b)', caseSensitive: false), replacements: ['That is amusing.']),
+  ExpressionRewrite(
+    pattern: RegExp(r'\bpfft(?:\s*[,.!?]|\b)', caseSensitive: false),
+    replacements: ['Nonsense.', 'Hardly.'],
+  ),
+  ExpressionRewrite(
+    pattern: RegExp(r'\bgrrr(?:\s*[,.!?]|\b)', caseSensitive: false),
+    replacements: ['Damn.', 'By the gods.'],
+  ),
+  ExpressionRewrite(
+    pattern: RegExp(r'\btsk(?:\s*[,.!?]|\b)', caseSensitive: false),
+    replacements: ['Careless.', 'Disappointing.'],
+  ),
+  ExpressionRewrite(
+    pattern: RegExp(
+      r'\b(hehehehe|hahahaha|haha|hehe|heh)(?:\s*[,.!?]|\b)',
+      caseSensitive: false,
+    ),
+    replacements: ['That is amusing.'],
+  ),
 ];
 
 String sanitizeText(String text, {String? voice}) {
@@ -492,7 +697,12 @@ String sanitizeText(String text, {String? voice}) {
       .replaceAll(RegExp(r'^\s*[-*+]\s', multiLine: true), '')
       .replaceAll(RegExp(r'^\s*\d+\.\s', multiLine: true), '')
       .replaceAll(RegExp(r'^-{3,}', multiLine: true), '')
-      .replaceAll(RegExp(r'\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})?'), '')
+      .replaceAll(
+        RegExp(
+          r'\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})?',
+        ),
+        '',
+      )
       .replaceAll(RegExp(r'\d{4}-\d{2}-\d{2}'), '')
       .replaceAll(RegExp(r'\d{2}/\d{2}/\d{4}'), '')
       .replaceAll(RegExp(r'\d{2}-\d{2}-\d{4}'), '')
@@ -523,7 +733,10 @@ String sanitizeText(String text, {String? voice}) {
       final hasPeriod = matchStr.endsWith('.');
 
       String rep = rule.replacements[_random.nextInt(rule.replacements.length)];
-      if (rep.endsWith('.') || rep.endsWith(',') || rep.endsWith('!') || rep.endsWith('?')) {
+      if (rep.endsWith('.') ||
+          rep.endsWith(',') ||
+          rep.endsWith('!') ||
+          rep.endsWith('?')) {
         final baseRep = rep.substring(0, rep.length - 1);
         if (hasComma) {
           rep = '$baseRep,';
