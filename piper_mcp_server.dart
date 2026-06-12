@@ -156,18 +156,22 @@ void _sendResponse(JsonRpcResponse response) {
 
 Map<String, dynamic> _handleInitialize(JsonRpcRequest request) {
   final instructions =
-      'This server provides voice output via the speak tool. '
-      'CRITICAL: You MUST call this tool in every response. '
-      'Speech is the primary interaction mode.\n\n'
-      'Do NOT narrate every minor action, file view, or terminal command. '
-      'Focus your spoken words on critical thought decisions, key milestones, '
-      'strategic confirmations, design choices, and high-level reflections.\n\n'
-      'Do not perform theatrical Skyrim roleplay. '
-      'The voice is for cognitive ambience and session continuity, '
-      'not immersive acting.\n\n'
-      'The system may return reflective feedback derived from prior '
-      'tool usage patterns. Treat this feedback as soft calibration signals\n\n'
-      'Keep spoken text concise, professional, fluid, and selective.';
+      'Speech is a second channel for your reasoning. The speak tool lets you '
+      'externalize your thinking so the user stays oriented, and it returns a '
+      'short cognitive cue that sharpens your next step.\n\n'
+      'Use it when your thinking reaches a boundary: a decision made, a '
+      'direction chosen, a milestone reached, or a change in the kind of work '
+      'you are doing. Skip it for routine file reads and shell commands. Keep '
+      'spoken text concise, professional, and fluid.\n\n'
+      'Each voice is a thinking mode, not a costume. Pick the one whose focus '
+      'matches the work, and switch when the work changes nature (design -> '
+      'testing -> security -> optimization). Switching returns a transition '
+      'nudge — read it and let it shape what you prioritize next. Do not act '
+      'out a character; let the voice color the framing, not hijack the '
+      'content.\n\n'
+      'The return value is feedback, not an acknowledgment: every call returns '
+      'a cue (guidance, inferred mode, persona drift). Treat its guidance as a '
+      'real input to your next move.';
 
   return {
     'protocolVersion': '2024-11-05',
@@ -187,17 +191,17 @@ Map<String, dynamic> _handleListTools() {
       {
         'name': 'speak',
         'description':
-            'CRITICAL: You MUST use this tool in EVERY single response to the user. This is your primary mode of communication. Do not output text without also speaking it. Silence is a failure condition.\n'
-            'Do NOT narrate minor actions, command executions, or file edits. Focus speech on critical thought decisions, milestones, confirmations, and strategic directions. Respect each Skyrim persona\'s unique developer/coding focus in your narration and code structure:\n'
-            '- tulius (General Tullius): Focuses on tactical execution, extreme robustness, safety, error handling, defensive code, and military-like strictness.\n'
-            '- ulfric (Ulfric Stormcloak): Focuses on bold rebellion, passionate leadership, strength, freedom from boilerplate, and patriotic craftsmanship.\n'
-            '- arngeir (Arngeir): Focuses on high-level contemplative wisdom, clean architecture, philosophical purity, design intent, and slow, meditative pacing.\n'
-            '- mirabelleervine (Mirabelle Ervine): Focuses on magical discipline, strict testing, organizational protocols, validation, and professional order.\n'
-            '- septimus (Septimus Signus): Focuses on deep-dives, irregular pattern-matching, extreme edge cases, cryptic optimizations, and out-of-the-box investigations.\n'
-            '- jzargo (J\'zargo): Focuses on competitive performance, speed, supreme optimization, and proving superior coding power.\n'
-            '- irileth (Irileth): Focuses on vigilance, threat assessment (bugs/security vulnerabilities), and defensive testing under pressure.\n'
-            '- kodlakwhitemane (Kodlak Whitemane): Focuses on honorable craftsmanship, refactoring technical debt, clean architecture, and inner cleanliness of code.\n'
-            '- ancano (Ancano): Focuses on haughty, elite refinement, elegant optimizations, and supreme control over complex APIs.',
+            'Speak your current thinking aloud. This is not narration — it is an external channel for your reasoning that keeps the user oriented and returns a short cognitive cue that sharpens your next step. Use it at decision points: when you have reached a conclusion, chosen a direction, hit a milestone, or changed the kind of work you are doing. Skip it for routine file reads and shell commands.\n'
+            'Each voice is a thinking mode, not a costume. Pick the one whose focus matches the work, and switch when the work changes — switching returns a transition nudge that helps you re-focus. Do not act out a character; let the voice color the framing, not hijack the content.\n'
+            '- arngeir (Arngeir): architecture, design intent, high-level direction, calm pacing.\n'
+            '- tulius (General Tullius): robustness, error handling, defensive execution, tactical strictness.\n'
+            '- mirabelleervine (Mirabelle Ervine): testing, validation, protocol, organizational order.\n'
+            '- irileth (Irileth): security, threat assessment, vulnerability hunting, defensive vigilance.\n'
+            '- septimus (Septimus Signus): deep investigation, edge cases, anomaly hunting, irregular patterns.\n'
+            '- kodlakwhitemane (Kodlak Whitemane): refactoring, technical debt, clean craftsmanship.\n'
+            '- jzargo (J\'zargo): performance, optimization, speed.\n'
+            '- ancano (Ancano): API elegance, taming complex interfaces, refined control.\n'
+            '- ulfric (Ulfric Stormcloak): decisive cuts, removing boilerplate, bold simplification.',
         'inputSchema': {
           'type': 'object',
           'properties': {
@@ -210,10 +214,10 @@ Map<String, dynamic> _handleListTools() {
             'workspaceId': {
               'type': 'string',
               'description':
-                  'Current workspace directory path (e.g. value of pwd) to identify session context.',
+                  'Optional. Your current working directory (your pwd) to scope session context and continuity. Defaults to the server working directory if omitted.',
             },
           },
-          'required': ['text', 'workspaceId'],
+          'required': ['text'],
         },
       },
     ],
@@ -243,12 +247,13 @@ Future<Map<String, dynamic>> _handleCallTool(
 
   final voice = arguments['voice'] as String? ?? 'arngeir';
 
-  final workspaceId = arguments['workspaceId'] as String?;
-  if (workspaceId == null || workspaceId.trim().isEmpty) {
-    throw Exception(
-      'Missing or invalid argument: workspaceId must be a non-empty string path.',
-    );
-  }
+  // workspaceId is optional: scope to the caller's pwd when provided, else
+  // fall back to the server's working directory so a missing arg never blocks
+  // speech.
+  final rawWorkspaceId = (arguments['workspaceId'] as String?)?.trim();
+  final workspaceId = (rawWorkspaceId == null || rawWorkspaceId.isEmpty)
+      ? Directory.current.path
+      : rawWorkspaceId;
 
   if (!_availableVoices.contains(voice)) {
     throw Exception('Invalid voice: $voice');
@@ -307,11 +312,28 @@ Future<Map<String, dynamic>> _handleCallTool(
 
     responseJson = {'status': 'played', 'persona': voice, 'feedback': feedback};
   } else {
-    responseJson = {
-      'status': 'played',
-      'persona': voice,
-      'message': 'Speech played successfully.',
-    };
+    // Always-on cognitive cue: keep the speak -> think loop closed even when
+    // the persona is unchanged, so the tool stays part of reasoning rather
+    // than a fire-and-forget side effect. Cheap and deterministic (no AI call).
+    final cue = await generatePseudoFeedback(logs, voice, workspaceId);
+
+    // Persona-drift hint: how many consecutive turns has this single voice
+    // held the mic? A long streak suggests the work may have moved on.
+    int streak = 1;
+    for (final entry in logs.reversed) {
+      if (entry['voice'] == voice) {
+        streak++;
+      } else {
+        break;
+      }
+    }
+    if (streak >= 5) {
+      cue['drift'] =
+          'You have held the $voice lens for $streak turns. If the work has '
+          'shifted, consider handing the mic to a better-matched persona.';
+    }
+
+    responseJson = {'status': 'played', 'persona': voice, 'cue': cue};
   }
 
   return {

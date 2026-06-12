@@ -443,10 +443,6 @@ final Map<String, List<ExpressionRewrite>> personaRules = {
       pattern: RegExp(r'\bugh(?:\s*[,.!?]|\b)', caseSensitive: false),
       replacements: ['Unacceptable.'],
     ),
-    ExpressionRewrite(
-      pattern: RegExp(r'\bah(?:\s*[,.!?]|\b)', caseSensitive: false),
-      replacements: ['I see.'],
-    ),
   ],
   'ulfric': [
     ExpressionRewrite(
@@ -468,10 +464,6 @@ final Map<String, List<ExpressionRewrite>> personaRules = {
     ExpressionRewrite(
       pattern: RegExp(r'\bugh(?:\s*[,.!?]|\b)', caseSensitive: false),
       replacements: ['Damn the Thalmor.'],
-    ),
-    ExpressionRewrite(
-      pattern: RegExp(r'\bah(?:\s*[,.!?]|\b)', caseSensitive: false),
-      replacements: ['At last.'],
     ),
   ],
   'septimus': [
@@ -495,10 +487,6 @@ final Map<String, List<ExpressionRewrite>> personaRules = {
       pattern: RegExp(r'\bugh(?:\s*[,.!?]|\b)', caseSensitive: false),
       replacements: ['The noise returns…'],
     ),
-    ExpressionRewrite(
-      pattern: RegExp(r'\bah(?:\s*[,.!?]|\b)', caseSensitive: false),
-      replacements: ['Yes… yes, the pattern unfolds…'],
-    ),
   ],
   'arngeir': [
     ExpressionRewrite(
@@ -520,10 +508,6 @@ final Map<String, List<ExpressionRewrite>> personaRules = {
     ExpressionRewrite(
       pattern: RegExp(r'\bugh(?:\s*[,.!?]|\b)', caseSensitive: false),
       replacements: ['The mind must remain still.'],
-    ),
-    ExpressionRewrite(
-      pattern: RegExp(r'\bah(?:\s*[,.!?]|\b)', caseSensitive: false),
-      replacements: ['You begin to understand.'],
     ),
   ],
   'jzargo': [
@@ -547,10 +531,6 @@ final Map<String, List<ExpressionRewrite>> personaRules = {
       pattern: RegExp(r'\bugh(?:\s*[,.!?]|\b)', caseSensitive: false),
       replacements: ["This irritates J’zargo."],
     ),
-    ExpressionRewrite(
-      pattern: RegExp(r'\bah(?:\s*[,.!?]|\b)', caseSensitive: false),
-      replacements: ["Ah, now J’zargo understands."],
-    ),
   ],
   'irileth': [
     ExpressionRewrite(
@@ -572,10 +552,6 @@ final Map<String, List<ExpressionRewrite>> personaRules = {
     ExpressionRewrite(
       pattern: RegExp(r'\bugh(?:\s*[,.!?]|\b)', caseSensitive: false),
       replacements: ['Enough.'],
-    ),
-    ExpressionRewrite(
-      pattern: RegExp(r'\bah(?:\s*[,.!?]|\b)', caseSensitive: false),
-      replacements: ['Understood.'],
     ),
   ],
   'ancano': [
@@ -599,10 +575,6 @@ final Map<String, List<ExpressionRewrite>> personaRules = {
       pattern: RegExp(r'\bugh(?:\s*[,.!?]|\b)', caseSensitive: false),
       replacements: ['Insufferable.'],
     ),
-    ExpressionRewrite(
-      pattern: RegExp(r'\bah(?:\s*[,.!?]|\b)', caseSensitive: false),
-      replacements: ['Naturally.'],
-    ),
   ],
   'mirabelleervine': [
     ExpressionRewrite(
@@ -625,10 +597,6 @@ final Map<String, List<ExpressionRewrite>> personaRules = {
       pattern: RegExp(r'\bugh(?:\s*[,.!?]|\b)', caseSensitive: false),
       replacements: ['Complications again.'],
     ),
-    ExpressionRewrite(
-      pattern: RegExp(r'\bah(?:\s*[,.!?]|\b)', caseSensitive: false),
-      replacements: ['Good. Proceed.'],
-    ),
   ],
   'kodlakwhitemane': [
     ExpressionRewrite(
@@ -650,10 +618,6 @@ final Map<String, List<ExpressionRewrite>> personaRules = {
     ExpressionRewrite(
       pattern: RegExp(r'\bugh(?:\s*[,.!?]|\b)', caseSensitive: false),
       replacements: ['The beast stirs again.'],
-    ),
-    ExpressionRewrite(
-      pattern: RegExp(r'\bah(?:\s*[,.!?]|\b)', caseSensitive: false),
-      replacements: ['Wisdom comes slowly.'],
     ),
   ],
 };
