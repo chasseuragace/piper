@@ -37,19 +37,47 @@ Future<bool> _bridgeUp() async {
   }
 }
 
-// Ensures the Apple bridge is listening, spawning it detached if needed. Returns
-// false (caller falls back to cloud) on non-macOS, missing binary, or timeout.
+// Compiles the bridge binary on demand if missing or stale (source newer than
+// binary). One-time cost; mirrors how the TTS server is brought up by the act
+// of using it — no separate setup step. Returns false if swiftc is unavailable
+// or compilation fails (caller falls back to cloud).
+Future<bool> _ensureBridgeBuilt(String dir) async {
+  final src = File(path.join(dir, 'bridge.swift'));
+  final bin = File(path.join(dir, 'bridge'));
+  if (!src.existsSync()) {
+    stderr.writeln('Apple bridge source not found at ${src.path}');
+    return false;
+  }
+  final fresh =
+      bin.existsSync() &&
+      !src.lastModifiedSync().isAfter(bin.lastModifiedSync());
+  if (fresh) return true;
+
+  stderr.writeln('Compiling Apple bridge (one-time)...');
+  final r = await Process.run('swiftc', [
+    '-O',
+    'bridge.swift',
+    '-o',
+    'bridge',
+  ], workingDirectory: dir);
+  if (r.exitCode != 0) {
+    stderr.writeln('Apple bridge compile failed: ${r.stderr}');
+    return false;
+  }
+  return true;
+}
+
+// Ensures the Apple bridge is built and listening, compiling/spawning on demand.
+// Returns false (caller falls back to cloud) on non-macOS, no swiftc, or timeout.
 Future<bool> ensureBridgeRunning() async {
   if (!Platform.isMacOS) return false;
   if (await _bridgeUp()) return true;
   if (_spawning) return false; // another call is already starting it
   _spawning = true;
   try {
-    final bin = path.join(PiperTTS.getScriptDir(), 'apple_bridge', 'bridge');
-    if (!File(bin).existsSync()) {
-      stderr.writeln('Apple bridge binary not found at $bin');
-      return false;
-    }
+    final dir = path.join(PiperTTS.getScriptDir(), 'apple_bridge');
+    if (!await _ensureBridgeBuilt(dir)) return false;
+    final bin = path.join(dir, 'bridge');
     stderr.writeln('Starting Apple on-device bridge...');
     await Process.run('bash', [
       '-c',
