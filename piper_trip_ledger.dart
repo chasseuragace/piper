@@ -225,3 +225,143 @@ Future<bool?> _llmGateDecision({
   if (v is String) return v.toLowerCase() == 'true';
   return null;
 }
+
+// ============================================================
+// AGENT ACK LEDGER: the second loop — the observed talks back
+// ============================================================
+//
+// The balcony judges the agent but never hears its reply. An ack lets the agent
+// answer a specific concern ("that one's intentional / not applicable") so the
+// gate stops re-raising it — UNTIL the situation materially escalates, which
+// always breaks through. Stored per workspace, per stable concernId. Free and
+// deterministic: the dumb gate just matches keys; it never has to "trust".
+
+// "addressing" means the agent says it's fixing the concern now — hold briefly,
+// then let it resurface if the fix never lands.
+const Duration _ackAddressingTtl = Duration(seconds: 120);
+
+const Map<String, int> _fileRankOrder = {
+  '0': 0,
+  '1-2': 1,
+  '3-5': 2,
+  '6-10': 3,
+  '10+': 4,
+};
+const Map<String, int> _churnRankOrder = {
+  '0': 0,
+  '<50': 1,
+  '<150': 2,
+  '<500': 3,
+  '500+': 4,
+};
+
+File _acksFile() {
+  final scriptDir = PiperTTS.getScriptDir();
+  final logsDir = Directory(path.join(scriptDir, 'workspace_logs'));
+  if (!logsDir.existsSync()) {
+    logsDir.createSync(recursive: true);
+  }
+  return File(path.join(logsDir.path, 'trip_acks.json'));
+}
+
+Future<Map<String, dynamic>> _readAcks() async {
+  try {
+    final f = _acksFile();
+    if (!await f.exists()) return {};
+    final content = await f.readAsString();
+    if (content.trim().isEmpty) return {};
+    return jsonDecode(content) as Map<String, dynamic>;
+  } catch (e) {
+    stderr.writeln('Error reading ack ledger: $e');
+    return {};
+  }
+}
+
+// The standing acks for [workspaceId], keyed by concernId.
+Future<Map<String, dynamic>> loadAcks(String workspaceId) async {
+  final acks = await _readAcks();
+  final ws = acks[workspaceId];
+  if (ws is Map<String, dynamic>) return ws;
+  if (ws is Map) return ws.cast<String, dynamic>();
+  return {};
+}
+
+// Record the agent's answer to a concern, snapshotting the magnitude NOW so a
+// later escalation can be measured against it.
+Future<void> recordAck(
+  String workspaceId, {
+  required String concernId,
+  required String ack,
+  String? why,
+  Map<String, dynamic>? obs,
+}) async {
+  try {
+    final acks = await _readAcks();
+    final ws = (acks[workspaceId] is Map)
+        ? (acks[workspaceId] as Map).cast<String, dynamic>()
+        : <String, dynamic>{};
+    ws[concernId] = {
+      'ts': DateTime.now().toIso8601String(),
+      'ack': ack,
+      if (why != null && why.trim().isNotEmpty) 'why': why.trim(),
+      'files': (obs?['filesChanged'] as int?) ?? 0,
+      'churn':
+          ((obs?['insertions'] as int?) ?? 0) +
+          ((obs?['deletions'] as int?) ?? 0),
+      if (obs != null) 'fingerprint': fingerprintObs(obs),
+    };
+    acks[workspaceId] = ws;
+    await _acksFile().writeAsString(jsonEncode(acks));
+  } catch (e) {
+    stderr.writeln('Error recording ack: $e');
+  }
+}
+
+// Has the workspace grown materially worse than when [ack] was recorded? A jump
+// in the coarse file- or churn-bucket counts as escalation; small follow-on
+// edits do not, so one extra line never undoes a dismissal.
+bool _ackEscalated(Map<String, dynamic> ack, Map<String, dynamic> obs) {
+  final nowFiles = (obs['filesChanged'] as int?) ?? 0;
+  final nowChurn =
+      ((obs['insertions'] as int?) ?? 0) + ((obs['deletions'] as int?) ?? 0);
+  final ackFiles = (ack['files'] as int?) ?? 0;
+  final ackChurn = (ack['churn'] as int?) ?? 0;
+  final fileJump =
+      (_fileRankOrder[_filesBucket(nowFiles)] ?? 0) >
+      (_fileRankOrder[_filesBucket(ackFiles)] ?? 0);
+  final churnJump =
+      (_churnRankOrder[_churnBucket(nowChurn)] ?? 0) >
+      (_churnRankOrder[_churnBucket(ackChurn)] ?? 0);
+  return fileJump || churnJump;
+}
+
+// Of the currently-tripped [concerns], which are silenced by a standing ack?
+// Deterministic: dismissive acks (intentional/not-applicable/disagree) hold
+// until escalation; "addressing" holds only briefly. Returns the ids to drop
+// from this turn's tripwire.
+Future<Set<String>> suppressedConcerns(
+  String workspaceId,
+  List<String> concerns,
+  Map<String, dynamic> obs,
+) async {
+  if (concerns.isEmpty) return {};
+  final acks = await loadAcks(workspaceId);
+  final now = DateTime.now();
+  final out = <String>{};
+  for (final c in concerns) {
+    final raw = acks[c];
+    if (raw is! Map) continue;
+    final ack = raw.cast<String, dynamic>();
+    if (_ackEscalated(ack, obs)) continue; // grew worse -> let it through
+    final kind = (ack['ack'] ?? '').toString();
+    if (kind == 'intentional' ||
+        kind == 'not-applicable' ||
+        kind == 'disagree') {
+      out.add(c);
+    } else if (kind == 'addressing') {
+      final ts = DateTime.tryParse(ack['ts']?.toString() ?? '');
+      if (ts != null && now.difference(ts) < _ackAddressingTtl) out.add(c);
+    }
+  }
+  return out;
+}

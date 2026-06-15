@@ -235,6 +235,26 @@ Map<String, dynamic> _handleListTools() {
               'description':
                   'Optional. Your current working directory (your pwd) to scope session context and continuity. Defaults to the server working directory if omitted.',
             },
+            'feedback': {
+              'type': 'object',
+              'description':
+                  'Optional. Answer a prior observer concern so it stops repeating once you have handled it or it does not apply. Echo a concern id from the "concerns" field of this tool\'s previous return. '
+                  'Shape: { "re": "<concernId, e.g. missing-tests>", "ack": "intentional" | "addressing" | "not-applicable" | "disagree", "why": "<short reason>" }. '
+                  'Example: { "re": "large-churn", "ack": "intentional", "why": "regenerated lockfile" }.',
+              'properties': {
+                're': {'type': 'string'},
+                'ack': {
+                  'type': 'string',
+                  'enum': [
+                    'intentional',
+                    'addressing',
+                    'not-applicable',
+                    'disagree',
+                  ],
+                },
+                'why': {'type': 'string'},
+              },
+            },
           },
           'required': ['text'],
         },
@@ -318,13 +338,55 @@ Future<Map<String, dynamic>> _handleCallTool(
   final obs = await observeWorkspace(workspaceId);
   final trip = evaluateTripWire(obs, logs, voice);
 
+  // ==========================================================
+  // STEP 2.5 — AGENT FEEDBACK: record any ack, then silence acked concerns
+  // ==========================================================
+  //
+  // The second loop: the observed agent answers a concern by id, and a standing
+  // ack drops that concern from this turn's tripwire (until it escalates). Pure
+  // deterministic key-matching — no model call, and absence degrades to the
+  // exact prior behavior.
+
+  final feedbackArg = arguments['feedback'];
+  if (feedbackArg is Map) {
+    final re = (feedbackArg['re'] ?? '').toString().trim();
+    final ack = (feedbackArg['ack'] ?? '').toString().trim();
+    const validAcks = {
+      'intentional',
+      'addressing',
+      'not-applicable',
+      'disagree',
+    };
+    if (re.isNotEmpty && validAcks.contains(ack)) {
+      await recordAck(
+        workspaceId,
+        concernId: re,
+        ack: ack,
+        why: (feedbackArg['why'] ?? '').toString(),
+        obs: obs,
+      );
+    }
+  }
+
+  final allConcerns = List<String>.from(trip['concerns'] as List? ?? const []);
+  final allReasons = List<String>.from(trip['reasons'] as List? ?? const []);
+  final suppressed = await suppressedConcerns(workspaceId, allConcerns, obs);
+  final liveConcerns = <String>[];
+  final liveReasons = <String>[];
+  for (var i = 0; i < allConcerns.length; i++) {
+    if (suppressed.contains(allConcerns[i])) continue;
+    liveConcerns.add(allConcerns[i]);
+    if (i < allReasons.length) liveReasons.add(allReasons[i]);
+  }
+  final effectiveTripped = liveConcerns.isNotEmpty;
+
   // Stateful gate: a raw trip only surfaces if it is NOVEL (situation changed,
   // or the cooldown lapsed). This is what stops the "source changed without
   // tests" condition from nagging every single turn.
   final gate = await evaluateGate(
     workspaceId: workspaceId,
     obs: obs,
-    rawTripped: trip['tripped'] as bool,
+    rawTripped: effectiveTripped,
     voiceSwitch: isVoiceSwitch,
   );
   final tripped = gate['gate'] as bool;
@@ -340,7 +402,7 @@ Future<Map<String, dynamic>> _handleCallTool(
       voice: voice,
       logs: logs,
       obs: obs,
-      tripReasons: List<String>.from(trip['reasons'] as List),
+      tripReasons: liveReasons,
     );
 
     if (judged != null) {
@@ -350,7 +412,7 @@ Future<Map<String, dynamic>> _handleCallTool(
       await recordTrip(
         workspaceId,
         fingerprint: gate['fingerprint'] as String,
-        conditions: List<String>.from(trip['reasons'] as List),
+        conditions: liveReasons,
         severity: (judged['severity'] ?? 'low').toString(),
         obs: obs,
       );
@@ -422,6 +484,9 @@ Future<Map<String, dynamic>> _handleCallTool(
     'voiceSwitch': isVoiceSwitch,
     'observation': summarizeObservation(obs),
     'gate': gate['reason'],
+    // Canonical concern ids the agent can answer via `feedback.re` next turn.
+    'concerns': liveConcerns,
+    if (suppressed.isNotEmpty) 'suppressed': suppressed.toList(),
     'judgements': drained,
   };
 

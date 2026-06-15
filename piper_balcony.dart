@@ -174,17 +174,25 @@ Map<String, dynamic> evaluateTripWire(
   List<Map<String, dynamic>> logs,
   String voice,
 ) {
+  // Each fired signal carries a STABLE id (for deterministic ack-matching) and a
+  // human reason (for the judge prompt). The two lists stay index-aligned.
+  final concerns = <String>[];
   final reasons = <String>[];
+  void fire(String id, String reason) {
+    concerns.add(id);
+    reasons.add(reason);
+  }
+
   final filesChanged = (obs['filesChanged'] as int?) ?? 0;
   final churn =
       ((obs['insertions'] as int?) ?? 0) + ((obs['deletions'] as int?) ?? 0);
   final spread = (obs['moduleSpread'] as int?) ?? 0;
 
-  if (filesChanged >= 6) reasons.add('sprawl: $filesChanged files touched');
-  if (spread >= 3) reasons.add('scattered across $spread modules');
-  if (churn >= 150) reasons.add('large churn ($churn lines)');
+  if (filesChanged >= 6) fire('sprawl', 'sprawl: $filesChanged files touched');
+  if (spread >= 3) fire('scattered', 'scattered across $spread modules');
+  if (churn >= 150) fire('large-churn', 'large churn ($churn lines)');
   if (obs['srcTouched'] == true && obs['testTouched'] == false) {
-    reasons.add('source changed without tests');
+    fire('missing-tests', 'source changed without tests');
   }
 
   int streak = 1;
@@ -195,9 +203,16 @@ Map<String, dynamic> evaluateTripWire(
       break;
     }
   }
-  if (streak >= 5) reasons.add('held the $voice lens for $streak turns');
+  if (streak >= 5) {
+    fire('lens-streak', 'held the $voice lens for $streak turns');
+  }
 
-  return {'tripped': reasons.isNotEmpty, 'reasons': reasons, 'streak': streak};
+  return {
+    'tripped': reasons.isNotEmpty,
+    'reasons': reasons,
+    'concerns': concerns,
+    'streak': streak,
+  };
 }
 
 // ============================================================
