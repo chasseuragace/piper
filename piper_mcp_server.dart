@@ -82,7 +82,11 @@ class JsonRpcResponse {
 void main() async {
   final tts = PiperTTS();
 
-  _availableVoices = await tts.getAvailableVoices();
+  // Exclude non-persona / language-only voices (nepali) entirely — they are
+  // never offered as a thinking lens.
+  _availableVoices = (await tts.getAvailableVoices())
+      .where((v) => v != 'nepali')
+      .toList();
 
   if (_availableVoices.isEmpty) {
     _availableVoices = ['arngeir'];

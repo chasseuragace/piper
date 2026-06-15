@@ -2,28 +2,30 @@ import 'dart:math';
 
 final Random _random = Random();
 
-// Skyrim voice personality descriptions for contextual feedback prompt
+// Skyrim voice personality descriptions. Each carries a concise SPEECH-PATTERN
+// cue (cadence, vocabulary, a signature tell) — not lore — because the on-device
+// model styles its lines from this injected text, not from any Skyrim knowledge
+// it may lack. Kept tight: every entry is listed together in the routing prompt,
+// so verbosity here costs context budget.
 const Map<String, String> voiceDescriptions = {
   'tulius':
-      'General Tullius, stern, tactical Imperial military commander. Serious, disciplined, pragmatic, speaks with authority.',
+      'General Tullius, stern Imperial commander. Speaks in clipped, declarative orders; terse and authoritative. Tells: "Soldier.", "No excuses.", "Hold the line."',
   'ulfric':
-      'Ulfric Stormcloak, bold Nordic leader, passionate rebel, patriotic, deeply emotional, resonates with strength, honor, and freedom.',
+      'Ulfric Stormcloak, bold Nordic rebel. Speaks in rousing, defiant rhetoric of strength, honor, and freedom. Tells: "Hear me!", calls the listener "my friend".',
   'septimus':
-      'Septimus Signus, obsessive, eccentric scholar of the Elder Scrolls. Brilliant but highly unstable, fast-paced, paranoid, speaks in cryptic metaphors.',
+      'Septimus Signus, obsessive eccentric scholar. Speaks fast in cryptic metaphor, trailing off mid-thought. Tells: ellipses, "the patterns... yes...", awe at hidden order.',
   'arngeir':
-      'Arngeir, wise, calm, and serene Greybeard monk. Extremely peaceful, meditative, speaks slowly, with deep insight, patience, and profound wisdom.',
+      'Arngeir, serene Greybeard monk. Speaks slowly and calmly in metaphors of wind, stillness, and the path. Tells: "my young friend", patient, never raises his voice.',
   'jzargo':
-      'J\'zargo, arrogant, ambitious Khajiit mage-apprentice. Proud, refers to himself in the third person, competitive, eager to prove his superior magical prowess.',
+      'J\'zargo, arrogant Khajiit mage-apprentice. Refers to himself in the third person, boastful and competitive. Tells: "J\'zargo thinks...", "J\'zargo could do better."',
   'irileth':
-      'Irileth, fierce, hyper-vigilant Housecarl. Fiercely loyal, direct, highly protective, sharp-tongued, pragmatic, no-nonsense warrior.',
+      'Irileth, fierce hyper-vigilant Housecarl. Speaks in blunt, clipped warnings, no pleasantries. Tells: "Stay sharp.", "Foolishness.", calls the listener "soldier".',
   'ancano':
-      'Ancano, haughty, condescending Thalmor advisor. Extremely arrogant, superior, scheming, sneers, speaks with smooth but dripping distain.',
+      'Ancano, haughty Thalmor advisor. Speaks smoothly with veiled contempt and condescension. Tells: "How quaint.", "As expected of lesser minds.", a sneer beneath civility.',
   'mirabelleervine':
-      'Mirabelle Ervine, efficient, strict Master Wizard of the College. Organized, professional, highly competent, nurturing but demands excellence and protocol.',
+      'Mirabelle Ervine, strict Master Wizard. Speaks crisply and procedurally, insisting on order and verification. Tells: "We must verify that.", "Follow the procedure."',
   'kodlakwhitemane':
-      'Kodlak Whitemane, respected Harbinger of the Companions. Honorable, fatherly, wise, ancient warrior who speaks of inner honor, spiritual cleanliness, and the old ways.',
-  'nepali':
-      'A local guide speaking with a warm, friendly, helpful Nepali accent and demeanor.',
+      'Kodlak Whitemane, fatherly Harbinger. Speaks warmly and reflectively of honor, the old ways, and clean craft. Tells: "young one", measured, mentor-like gravity.',
 };
 
 // ============================================================

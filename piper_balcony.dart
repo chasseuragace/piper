@@ -312,9 +312,7 @@ Future<Map<String, dynamic>?> _diagnose({
 // problem. One decision, judged on the problem alone (not the current voice),
 // which is exactly why it routes accurately. Free, on-device.
 Future<String?> _routeLens(Map<String, dynamic> diag) async {
-  // Exclude language-only voices (e.g. nepali) — they are not coding lenses.
   final voiceList = voiceDescriptions.entries
-      .where((e) => e.key != 'nepali')
       .map((e) => '- ${e.key}: ${e.value}')
       .join('\n');
   final systemPrompt =
