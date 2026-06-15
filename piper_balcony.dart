@@ -3,6 +3,7 @@ import 'package:path/path.dart' as path;
 
 import 'piper_personas.dart';
 import 'piper_ai_client.dart';
+import 'piper_local_llm.dart';
 
 // ============================================================
 // THE BALCONY: READ-ONLY WORKSPACE OBSERVATION (ZERO TOKENS)
@@ -217,44 +218,6 @@ Future<Map<String, dynamic>?> judgeWorkspace({
     final client = getAIClient();
     if (client == null) return null;
 
-    final voiceList = voiceDescriptions.entries
-        .map((e) => '- ${e.key}: ${e.value}')
-        .join('\n');
-
-    final systemPrompt =
-        'You are the Balcony: an outside observer of a live pair-programming '
-        'session. The coding agent is down on the dance floor, immersed and '
-        'carried by momentum. You are not. You see two things it cannot weigh '
-        'against each other: GROUND TRUTH (real git facts about the workspace) '
-        'and NARRATION (what the agent said it was doing).\n\n'
-        'Your job is to detect DIVERGENCE between the story and the reality, '
-        'and decide whether to tap the agent on the shoulder. Examples of '
-        'divergence: said "small fix" but the diff is large; narrated about one '
-        'module but edits are in another; claimed done/tests pass but no test '
-        'file changed; long narration but nothing changed (spinning); many '
-        'changes but no narration (going dark).\n\n'
-        'Be SPARING. Most turns are fine — return severity "none" or "low" and '
-        'an empty spokenLine. Only escalate when reality genuinely warrants it. '
-        'When you do escalate, pick the persona-lens whose focus best fits the '
-        'diagnosed need.\n\n'
-        'Available persona-lenses:\n$voiceList\n\n'
-        'VOICE DISCIPLINE for spokenLine (high severity only): write it AS the '
-        'chosen persona would actually speak — in their diction, cadence, and '
-        'worldview drawn from the descriptions above. The speaker IS that '
-        'character, addressing a fellow craftsman at the forge of the code. '
-        'NEVER use the words "agent", "AI", "assistant", "user", or "model"; '
-        'address the listener the way that character naturally would (a comrade, '
-        'an apprentice, a soldier — never a generic operator). Let the persona '
-        'color the framing, but keep the substance accurate and grounded — '
-        'flavour, not pantomime. One or two sentences.\n\n'
-        'OUTPUT FORMAT: return ONLY a single valid JSON object with keys:\n'
-        '- "severity": "none" | "low" | "medium" | "high"\n'
-        '- "verdict": 1-2 sentence neutral assessment for the developer to read (always).\n'
-        '- "divergence": what drifted between narration and code, or "" if none.\n'
-        '- "recommendedVoice": the best-fit persona key from the list above.\n'
-        '- "spokenLine": a short in-character line (high severity only), else "".\n'
-        'CRITICAL: raw JSON only, no markdown.';
-
     final narration = logs.isEmpty
         ? 'No prior narration. Session is just beginning.'
         : logs
@@ -264,35 +227,137 @@ Future<Map<String, dynamic>?> judgeWorkspace({
               )
               .join('\n');
 
-    final prompt =
-        'WORKSPACE: "$workspaceId" (current lens: $voice)\n\n'
-        'GROUND TRUTH (git):\n${summarizeObservation(obs)}\n'
-        'Changed paths: ${(obs['dirtyPaths'] as List).join(', ')}\n\n'
-        'CHEAP SIGNALS THAT FIRED: ${tripReasons.isEmpty ? '(none — routine check)' : tripReasons.join('; ')}\n\n'
-        'NARRATION HISTORY (what the agent said):\n$narration\n\n'
-        'Judge the divergence between story and reality. Decide severity, the '
-        'best-fit lens, and whether to speak.';
-
-    final jsonResult = await client.generateJsonCompletion(
-      prompt,
-      systemPrompt: systemPrompt,
-      temperature: 0.6,
-      maxTokens: 280,
+    // PASS 1 — DIAGNOSE (cloud, nuanced): divergence + severity + verdict only.
+    // No persona, no voice — just the truth. A single-purpose prompt reasons
+    // far better than one juggling diagnosis, routing, and voicing at once.
+    final diag = await _diagnose(
+      client: client,
+      workspaceId: workspaceId,
+      voice: voice,
+      obs: obs,
+      narration: narration,
+      tripReasons: tripReasons,
     );
+    if (diag == null) return null;
 
-    if (jsonResult == null) return null;
-
-    final rec = (jsonResult['recommendedVoice'] ?? voice).toString();
-    return {
-      'severity': (jsonResult['severity'] ?? 'low').toString(),
-      'verdict': (jsonResult['verdict'] ?? '').toString(),
-      'divergence': (jsonResult['divergence'] ?? '').toString(),
-      'recommendedVoice': voiceDescriptions.containsKey(rec) ? rec : voice,
-      'spokenLine': (jsonResult['spokenLine'] ?? '').toString(),
+    final severity = (diag['severity'] ?? 'low').toString();
+    final result = <String, dynamic>{
+      'severity': severity,
+      'verdict': (diag['verdict'] ?? '').toString(),
+      'divergence': (diag['divergence'] ?? '').toString(),
+      'recommendedVoice': voice,
+      'spokenLine': '',
       'observation': summarizeObservation(obs),
     };
+
+    // Only a high-severity finding ever speaks, so only then do we pay for the
+    // two focused follow-up passes — both free, on-device.
+    if (severity == 'high') {
+      // PASS 2 — ROUTE (local, focused): pick the best-fit lens for THIS issue,
+      // judged on the diagnosis alone, not anchored to the current voice.
+      final lens = await _routeLens(diag) ?? voice;
+      result['recommendedVoice'] = lens;
+      // PASS 3 — VOICE (local, focused): compose the line AS that persona.
+      result['spokenLine'] = await _composeSpokenLine(lens, diag) ?? '';
+    }
+
+    return result;
   } catch (e) {
     stderr.writeln('Error in judgeWorkspace: $e');
     return null;
   }
+}
+
+// PASS 1 — DIAGNOSE: detect story-vs-reality divergence and score it. The hard,
+// nuanced reasoning — kept on the cloud model. Knows nothing of personas.
+Future<Map<String, dynamic>?> _diagnose({
+  required dynamic client,
+  required String workspaceId,
+  required String voice,
+  required Map<String, dynamic> obs,
+  required String narration,
+  required List<String> tripReasons,
+}) async {
+  final systemPrompt =
+      'You are the Balcony: an outside observer of a live coding session. The '
+      'developer is immersed and carried by momentum; you are not. You weigh '
+      'two things they cannot: GROUND TRUTH (real git facts) and NARRATION '
+      '(what they said they were doing).\n\n'
+      'Detect DIVERGENCE between story and reality. Examples: said "small fix" '
+      'but the diff is large; narrated one module but edited another; claimed '
+      'done/tests pass but no test changed; long narration, nothing changed '
+      '(spinning); many changes, no narration (going dark).\n\n'
+      'Be SPARING — most turns are fine. Reserve "high" for genuine, '
+      'worth-interrupting divergence.\n\n'
+      'Return ONLY JSON: {"severity": "none|low|medium|high", "verdict": '
+      '"1-2 neutral sentences for the developer to read", "divergence": "what '
+      'drifted, or empty"}. Raw JSON only, no markdown.';
+
+  final prompt =
+      'GROUND TRUTH (git):\n${summarizeObservation(obs)}\n'
+      'Changed paths: ${(obs['dirtyPaths'] as List).join(', ')}\n\n'
+      'CHEAP SIGNALS THAT FIRED: ${tripReasons.isEmpty ? '(none — routine check)' : tripReasons.join('; ')}\n\n'
+      'NARRATION HISTORY (what the developer said):\n$narration\n\n'
+      'Diagnose the divergence and score its severity.';
+
+  return client.generateJsonCompletion(
+    prompt,
+    systemPrompt: systemPrompt,
+    temperature: 0.5,
+    maxTokens: 200,
+  );
+}
+
+// PASS 2 — ROUTE: pick the persona-lens whose focus best fits the diagnosed
+// problem. One decision, judged on the problem alone (not the current voice),
+// which is exactly why it routes accurately. Free, on-device.
+Future<String?> _routeLens(Map<String, dynamic> diag) async {
+  // Exclude language-only voices (e.g. nepali) — they are not coding lenses.
+  final voiceList = voiceDescriptions.entries
+      .where((e) => e.key != 'nepali')
+      .map((e) => '- ${e.key}: ${e.value}')
+      .join('\n');
+  final systemPrompt =
+      'Choose the single best-fit reviewer for a coding concern. Match the '
+      'concern to the reviewer whose focus fits it (e.g. security issue -> the '
+      'vigilant one; missing tests -> the testing one; sprawling change -> the '
+      'simplifier or the architect). Return ONLY JSON: {"voice": "<key>"} using '
+      'one key from the list. Raw JSON only.';
+  final prompt =
+      'Reviewers:\n$voiceList\n\n'
+      'Concern: ${diag['verdict']}\n'
+      'Divergence: ${diag['divergence']}\n\n'
+      'Which reviewer fits best?';
+
+  final r = await cheapJson(prompt, systemPrompt: systemPrompt, maxTokens: 40);
+  final key = (r?['voice'] ?? '').toString();
+  return voiceDescriptions.containsKey(key) ? key : null;
+}
+
+// PASS 3 — VOICE: compose the spoken line AS the chosen persona. One job —
+// styling the diagnosis in-character — so the voice discipline actually sticks.
+// Free, on-device.
+Future<String?> _composeSpokenLine(
+  String lens,
+  Map<String, dynamic> diag,
+) async {
+  final persona = voiceDescriptions[lens] ?? 'A wise mentor.';
+  final systemPrompt =
+      'You ARE this character: $persona\n\n'
+      'Say ONE short sentence (no more) to a fellow craftsman about the concern '
+      'below, in your own diction, cadence, and worldview. Be brief — a single '
+      'remark, not a speech. You are that character — address them as that '
+      'character naturally would (comrade, apprentice, soldier). NEVER use the '
+      'words "agent", "AI", "assistant", "user", or "model". Flavour that colors '
+      'the framing, but keep the substance accurate. Return ONLY JSON: '
+      '{"line": "<your words>"}.';
+  final prompt =
+      'Concern: ${diag['verdict']}\n'
+      'What drifted: ${diag['divergence']}\n\n'
+      'Say your one-sentence piece.';
+
+  final r = await cheapJson(prompt, systemPrompt: systemPrompt, maxTokens: 70);
+  return (r?['line'] ?? '').toString().trim().isEmpty
+      ? null
+      : (r!['line']).toString().trim();
 }
