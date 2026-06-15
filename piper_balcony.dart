@@ -257,8 +257,9 @@ Future<Map<String, dynamic>?> judgeWorkspace({
       // judged on the diagnosis alone, not anchored to the current voice.
       final lens = await _routeLens(diag) ?? voice;
       result['recommendedVoice'] = lens;
-      // PASS 3 — VOICE (local, focused): compose the line AS that persona.
-      result['spokenLine'] = await _composeSpokenLine(lens, diag) ?? '';
+      // PASS 3 — VOICE (local, focused): compose the line AS that persona,
+      // carrying the concrete facts so the heard channel delivers real feedback.
+      result['spokenLine'] = await _composeSpokenLine(lens, diag, obs) ?? '';
     }
 
     return result;
@@ -338,24 +339,76 @@ Future<String?> _routeLens(Map<String, dynamic> diag) async {
 Future<String?> _composeSpokenLine(
   String lens,
   Map<String, dynamic> diag,
+  Map<String, dynamic> obs,
 ) async {
   final persona = voiceDescriptions[lens] ?? 'A wise mentor.';
+
+  // Curated, human-phrased facts — NOT the raw debug summary, so the persona
+  // weaves real numbers in naturally instead of reciting "src=true tests=false".
+  final files = (obs['filesChanged'] as int?) ?? 0;
+  final churn =
+      ((obs['insertions'] as int?) ?? 0) + ((obs['deletions'] as int?) ?? 0);
+  final noTests = obs['srcTouched'] == true && obs['testTouched'] != true;
+  // Large line counts get a speech-safe "over N00" phrasing — a small model
+  // tends to mangle exact figures (409 -> "forty-one hundred") when it spells
+  // them out, but "over 400" it just repeats, and it is never wrong. Small
+  // counts (files, low churn) stay exact.
+  final churnPhrase = churn >= 100 ? 'over ${(churn ~/ 100) * 100} lines' : '$churn lines';
+  final facts = [
+    '$files files changed',
+    churnPhrase,
+    if (noTests) 'no tests updated',
+  ].join(', ');
+
   final systemPrompt =
       'You ARE this character: $persona\n\n'
-      'Say ONE short sentence (no more) to a fellow craftsman about the concern '
-      'below, in your own diction, cadence, and worldview. Be brief — a single '
-      'remark, not a speech. You are that character — address them as that '
-      'character naturally would (comrade, apprentice, soldier). NEVER use the '
-      'words "agent", "AI", "assistant", "user", or "model". Flavour that colors '
-      'the framing, but keep the substance accurate. Return ONLY JSON: '
+      'Say AT MOST TWO short sentences to a fellow craftsman, in your own diction '
+      'and cadence. THIS IS HEARD ALOUD and is the only feedback the listener '
+      'gets, so weave in the two or three most telling facts so they learn WHAT '
+      'is wrong — not merely that something is. Use the numbers EXACTLY as given '
+      '(as digits). Speak naturally as that character; do NOT recite field names, '
+      'branch names, or file paths like a report. Be brief — no sermons. Flavour '
+      'wraps the facts; it never replaces them. Address the listener as your '
+      'character would (comrade, apprentice, soldier). NEVER use the words '
+      '"agent", "AI", "assistant", "user", or "model". Return ONLY JSON: '
       '{"line": "<your words>"}.';
   final prompt =
-      'Concern: ${diag['verdict']}\n'
-      'What drifted: ${diag['divergence']}\n\n'
-      'Say your one-sentence piece.';
+      'Key facts: $facts.\n'
+      'The contradiction: ${diag['divergence']}\n\n'
+      'Say your concise piece — name the most telling facts, in your voice.';
 
-  final r = await cheapJson(prompt, systemPrompt: systemPrompt, maxTokens: 70);
-  return (r?['line'] ?? '').toString().trim().isEmpty
-      ? null
-      : (r!['line']).toString().trim();
+  final r = await cheapJson(prompt, systemPrompt: systemPrompt, maxTokens: 90);
+  final line = (r?['line'] ?? '').toString().trim();
+  if (line.isEmpty) return null;
+  // Hard cap: verbose personas (e.g. Arngeir) ignore "be brief" — enforce it.
+  final capped = _firstSentences(line, 2);
+  // Drop fact-free output: a cryptic persona (e.g. Septimus) can dodge the
+  // substance entirely ("the patterns..."). Better silent than a heard line
+  // that says nothing — the factual verdict still reaches the agent.
+  final carriesFact =
+      RegExp(r'\d').hasMatch(capped) ||
+      RegExp(r'\b(test|file|line)', caseSensitive: false).hasMatch(capped);
+  return carriesFact ? capped : null;
+}
+
+// Returns the first [n] sentences of [s], trimmed, skipping empty/punctuation-
+// only fragments. A backstop so a rambling persona line can never run on past
+// two sentences when heard aloud.
+String _firstSentences(String s, int n) {
+  final out = <String>[];
+  final buf = StringBuffer();
+  for (var i = 0; i < s.length; i++) {
+    buf.write(s[i]);
+    if ('.!?'.contains(s[i])) {
+      final seg = buf.toString().trim();
+      buf.clear();
+      if (seg.replaceAll(RegExp(r'[.!?\s]'), '').isEmpty) continue;
+      out.add(seg);
+      if (out.length >= n) break;
+    }
+  }
+  if (out.length < n && buf.toString().trim().isNotEmpty) {
+    out.add(buf.toString().trim());
+  }
+  return out.join(' ').trim();
 }
