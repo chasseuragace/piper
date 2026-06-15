@@ -75,9 +75,9 @@ class PiperTTS {
 
       stderr.writeln('Starting Piper TTS server with voice: $selectedVoice...');
       
-      // Bind explicitly to this instance's host/port so multiple instances
-      // (e.g. the main voice + a whisper side-channel) can coexist. The log is
-      // port-scoped so concurrent instances don't clobber each other's output.
+      // Bind explicitly to this instance's host/port so separate instances can
+      // coexist without colliding on the default port. The log is port-scoped
+      // so concurrent instances don't clobber each other's output.
       final serverArgs =
           '-m piper.http_server -m $modelPath --host $host --port $port';
 
@@ -126,7 +126,7 @@ class PiperTTS {
         await Process.run('taskkill', ['/F', '/IM', 'python.exe', '/FI', 'WINDOWTITLE eq piper.http_server*']);
       } else {
         // Unix: kill only the instance bound to THIS port, so restarting one
-        // instance never takes down a sibling (e.g. the whisper channel).
+        // instance never takes down a sibling instance.
         await Process.run('bash', [
           '-c',
           'pkill -f "piper.http_server.*--port $port"'
@@ -195,8 +195,8 @@ class PiperTTS {
       List<String> args;
 
       if (Platform.isMacOS) {
-        // afplay -v takes a linear gain (1.0 = normal). Used to "duck" a
-        // whisper line so it sits under the main voice.
+        // afplay -v takes a linear gain (1.0 = normal); lets callers lower the
+        // playback volume when needed.
         command = 'afplay';
         args = ['-v', volume.toStringAsFixed(2), filePath];
       } else {

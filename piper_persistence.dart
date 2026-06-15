@@ -261,10 +261,10 @@ File _channelLockFile(String channel) {
   return File(path.join(logsDir.path, '$channel.lock'));
 }
 
-// Generic named audio-channel lock. The main (foreground) voice uses the
-// 'speaking' channel; the ducked side voice uses 'whisper'. Distinct named
-// locks let a whisper deliberately overlap the main voice while still
-// preventing two whispers (or two foreground lines) from colliding.
+// Generic named audio-channel lock, coordinated across volatile MCP processes
+// so playback never overlaps. The foreground voice uses the 'speaking' channel;
+// the channel name is a parameter so other channels could be added later
+// without duplicating this logic.
 Future<void> acquireChannel(
   String channel,
   String voice,
