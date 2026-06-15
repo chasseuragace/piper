@@ -228,6 +228,7 @@ Future<Map<String, dynamic>?> judgeWorkspace({
   required List<Map<String, dynamic>> logs,
   required Map<String, dynamic> obs,
   required List<String> tripReasons,
+  List<Map<String, String>> acknowledged = const [],
 }) async {
   try {
     final client = getAIClient();
@@ -252,6 +253,7 @@ Future<Map<String, dynamic>?> judgeWorkspace({
       obs: obs,
       narration: narration,
       tripReasons: tripReasons,
+      acknowledged: acknowledged,
     );
     if (diag == null) return null;
 
@@ -293,6 +295,7 @@ Future<Map<String, dynamic>?> _diagnose({
   required Map<String, dynamic> obs,
   required String narration,
   required List<String> tripReasons,
+  List<Map<String, String>> acknowledged = const [],
 }) async {
   final systemPrompt =
       'You are the Balcony: an outside observer of a live coding session. The '
@@ -303,16 +306,30 @@ Future<Map<String, dynamic>?> _diagnose({
       'but the diff is large; narrated one module but edited another; claimed '
       'done/tests pass but no test changed; long narration, nothing changed '
       '(spinning); many changes, no narration (going dark).\n\n'
+      'The developer may have ACKNOWLEDGED some concerns (intentional, '
+      'not-applicable, being-addressed, or disputed). A listed acknowledgement '
+      'is SETTLED: do not raise that concern again. Only override it if the '
+      'change has clearly grown much larger than the acknowledgement implies.\n\n'
       'Be SPARING — most turns are fine. Reserve "high" for genuine, '
       'worth-interrupting divergence.\n\n'
       'Return ONLY JSON: {"severity": "none|low|medium|high", "verdict": '
       '"1-2 neutral sentences for the developer to read", "divergence": "what '
       'drifted, or empty"}. Raw JSON only, no markdown.';
 
+  final ackBlock = acknowledged.isEmpty
+      ? '(none)'
+      : acknowledged
+            .map(
+              (a) =>
+                  '- ${a['concern']}: ${a['ack']}${a['why'] != null ? ' (${a['why']})' : ''}',
+            )
+            .join('\n');
+
   final prompt =
       'GROUND TRUTH (git):\n${summarizeObservation(obs)}\n'
       'Changed paths: ${(obs['dirtyPaths'] as List).join(', ')}\n\n'
       'CHEAP SIGNALS THAT FIRED: ${tripReasons.isEmpty ? '(none — routine check)' : tripReasons.join('; ')}\n\n'
+      'DEVELOPER ACKNOWLEDGEMENTS (already settled — do not re-flag these):\n$ackBlock\n\n'
       'NARRATION HISTORY (what the developer said):\n$narration\n\n'
       'Diagnose the divergence and score its severity.';
 

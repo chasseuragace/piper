@@ -380,6 +380,10 @@ Future<Map<String, dynamic>> _handleCallTool(
   }
   final effectiveTripped = liveConcerns.isNotEmpty;
 
+  // Settled intent handed to the LLM judge so it won't re-raise an acked concern
+  // even on a voice-switch turn (which judges regardless of the tripwire).
+  final acknowledged = await standingAcks(workspaceId, obs);
+
   // Stateful gate: a raw trip only surfaces if it is NOVEL (situation changed,
   // or the cooldown lapsed). This is what stops the "source changed without
   // tests" condition from nagging every single turn.
@@ -403,6 +407,7 @@ Future<Map<String, dynamic>> _handleCallTool(
       logs: logs,
       obs: obs,
       tripReasons: liveReasons,
+      acknowledged: acknowledged,
     );
 
     if (judged != null) {

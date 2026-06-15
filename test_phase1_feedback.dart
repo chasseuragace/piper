@@ -52,5 +52,14 @@ Future<void> main() async {
   final addr = await suppressedConcerns(ws, concerns, obs);
   check('ack "addressing" (fresh) -> suppressed within TTL', addr.contains('missing-tests'));
 
+  // Phase 2: standing acks handed to the judge (settled-intent picture).
+  await recordAck(ws, concernId: 'missing-tests', ack: 'not-applicable', why: 'docs only', obs: obs);
+  final standing = await standingAcks(ws, obs);
+  check('standingAcks surfaces the settled concern',
+      standing.any((a) => a['concern'] == 'missing-tests' && a['ack'] == 'not-applicable'));
+  final standingEsc = await standingAcks(ws, escalated);
+  check('standingAcks drops escalated acks (judge re-raises)',
+      !standingEsc.any((a) => a['concern'] == 'missing-tests'));
+
   print('\n$pass passed, $fail failed');
 }

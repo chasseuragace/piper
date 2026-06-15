@@ -365,3 +365,38 @@ Future<Set<String>> suppressedConcerns(
   }
   return out;
 }
+
+// All standing, non-escalated acks for the workspace as {concern, ack, why}.
+// Unlike suppressedConcerns (which gates a specific tripwire), this is the full
+// settled-intent picture handed to the LLM judge so it won't re-raise a concern
+// the developer already answered — even on a voice-switch turn that judges
+// regardless of the tripwire.
+Future<List<Map<String, String>>> standingAcks(
+  String workspaceId,
+  Map<String, dynamic> obs,
+) async {
+  final acks = await loadAcks(workspaceId);
+  final now = DateTime.now();
+  final out = <Map<String, String>>[];
+  acks.forEach((concern, raw) {
+    if (raw is! Map) return;
+    final ack = raw.cast<String, dynamic>();
+    if (_ackEscalated(ack, obs)) return; // grew worse -> judge should re-raise
+    final kind = (ack['ack'] ?? '').toString();
+    if (kind == 'addressing') {
+      final ts = DateTime.tryParse(ack['ts']?.toString() ?? '');
+      if (ts == null || now.difference(ts) >= _ackAddressingTtl) return;
+    } else if (kind != 'intentional' &&
+        kind != 'not-applicable' &&
+        kind != 'disagree') {
+      return;
+    }
+    final why = (ack['why'] ?? '').toString().trim();
+    out.add({
+      'concern': concern,
+      'ack': kind,
+      if (why.isNotEmpty) 'why': why,
+    });
+  });
+  return out;
+}
