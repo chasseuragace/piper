@@ -159,10 +159,15 @@ Map<String, dynamic> _handleInitialize(JsonRpcRequest request) {
       'Speech is a second channel for your reasoning. The speak tool lets you '
       'externalize your thinking so the user stays oriented, and it returns a '
       'short cognitive cue that sharpens your next step.\n\n'
-      'Use it when your thinking reaches a boundary: a decision made, a '
-      'direction chosen, a milestone reached, or a change in the kind of work '
-      'you are doing. Skip it for routine file reads and shell commands. Keep '
-      'spoken text concise, professional, and fluid.\n\n'
+      'If this tool\'s schema is deferred and not yet loaded, load it '
+      'immediately at the start of the session via ToolSearch '
+      '(select:mcp__piper-tts__speak), then keep it available so you can speak '
+      'without being asked.\n\n'
+      'By default, narrate your reasoning at each meaningful step: a decision '
+      'made, a direction chosen, a milestone reached, or a change in the kind '
+      'of work you are doing. Stay silent only for genuinely routine file reads '
+      'and shell commands. Keep spoken text concise, professional, and '
+      'fluid.\n\n'
       'Each voice is a thinking mode, not a costume. Pick the one whose focus '
       'matches the work, and switch when the work changes nature (design -> '
       'testing -> security -> optimization). Switching returns a transition '
@@ -191,7 +196,7 @@ Map<String, dynamic> _handleListTools() {
       {
         'name': 'speak',
         'description':
-            'Speak your current thinking aloud. This is not narration — it is an external channel for your reasoning that keeps the user oriented and returns a short cognitive cue that sharpens your next step. Use it at decision points: when you have reached a conclusion, chosen a direction, hit a milestone, or changed the kind of work you are doing. Skip it for routine file reads and shell commands.\n'
+            'Speak your current thinking aloud. This is not narration — it is an external channel for your reasoning that keeps the user oriented and returns a short cognitive cue that sharpens your next step. By default, speak at each meaningful step: when you reach a conclusion, choose a direction, hit a milestone, or change the kind of work you are doing. Stay silent only for genuinely routine file reads and shell commands.\n'
             'Each voice is a thinking mode, not a costume. Pick the one whose focus matches the work, and switch when the work changes — switching returns a transition nudge that helps you re-focus. Do not act out a character; let the voice color the framing, not hijack the content.\n'
             '- arngeir (Arngeir): architecture, design intent, high-level direction, calm pacing.\n'
             '- tulius (General Tullius): robustness, error handling, defensive execution, tactical strictness.\n'
