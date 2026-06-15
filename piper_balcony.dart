@@ -231,6 +231,11 @@ Future<Map<String, dynamic>?> judgeWorkspace({
   List<Map<String, String>> acknowledged = const [],
 }) async {
   try {
+    // Nothing in the working tree -> nothing to diverge from. Skip the judge so
+    // it cannot hallucinate drift by comparing a clean tree against stale
+    // narration still in the log window (e.g. just after a commit).
+    if (((obs['filesChanged'] as int?) ?? 0) == 0) return null;
+
     final client = getAIClient();
     if (client == null) return null;
 
@@ -417,9 +422,13 @@ Future<String?> _composeSpokenLine(
   // Drop fact-free output: a cryptic persona (e.g. Septimus) can dodge the
   // substance entirely ("the patterns..."). Better silent than a heard line
   // that says nothing — the factual verdict still reaches the agent.
+  // A real intervention names a concrete number (file/line counts) or speaks to
+  // tests. Require a DIGIT or an explicit "test(s)" mention — a bare "files" or
+  // "line" with no number is exactly how a rambling persona sneaks past ("Zero
+  // files altered, yet the narrative expands...").
   final carriesFact =
       RegExp(r'\d').hasMatch(capped) ||
-      RegExp(r'\b(test|file|line)', caseSensitive: false).hasMatch(capped);
+      RegExp(r'\btests?\b', caseSensitive: false).hasMatch(capped);
   return carriesFact ? capped : null;
 }
 

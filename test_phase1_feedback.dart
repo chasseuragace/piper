@@ -61,5 +61,30 @@ Future<void> main() async {
   check('standingAcks drops escalated acks (judge re-raises)',
       !standingEsc.any((a) => a['concern'] == 'missing-tests'));
 
+  // Empty-obs guard: a clean tree must never reach the judge (no hallucinated
+  // divergence from stale narration). Returns null before any client call.
+  final emptyObs = <String, dynamic>{
+    'isGitRepo': true,
+    'filesChanged': 0,
+    'insertions': 0,
+    'deletions': 0,
+    'modules': {},
+    'moduleSpread': 0,
+    'srcTouched': false,
+    'testTouched': false,
+    'dirtyPaths': [],
+    'branch': 'x',
+  };
+  final nullJudge = await judgeWorkspace(
+    workspaceId: ws,
+    voice: 'arngeir',
+    logs: [
+      {'voice': 'arngeir', 'text': 'did a huge refactor', 'source': 'agent'},
+    ],
+    obs: emptyObs,
+    tripReasons: const [],
+  );
+  check('empty obs -> judge returns null (no hallucinated divergence)', nullJudge == null);
+
   print('\n$pass passed, $fail failed');
 }
