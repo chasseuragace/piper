@@ -369,6 +369,9 @@ Future<Map<String, dynamic>> _handleCallTool(
         why: (feedbackArg['why'] ?? '').toString(),
         obs: obs,
       );
+      // Tally for calibration: the ack stream is a labeled dataset of the
+      // balcony's own false positives (see piper_calibration.dart).
+      await recordAckStat(re, ack);
     }
   }
 
@@ -487,6 +490,10 @@ Future<Map<String, dynamic>> _handleCallTool(
   final drained = List<Map<String, dynamic>>.from(wsQueue);
   wsQueue.clear();
 
+  // Self-calibration: concerns the developer keeps dismissing are firing too
+  // eagerly. Surfaced (not auto-muted) so the bar can be raised deliberately.
+  final noisy = await noisyConcerns();
+
   final responseJson = {
     'status': 'played',
     'persona': voice,
@@ -496,6 +503,16 @@ Future<Map<String, dynamic>> _handleCallTool(
     // Canonical concern ids the agent can answer via `feedback.re` next turn.
     'concerns': liveConcerns,
     if (suppressed.isNotEmpty) 'suppressed': suppressed.toList(),
+    if (noisy.isNotEmpty)
+      'calibration': [
+        for (final n in noisy)
+          {
+            'concern': n['concern'],
+            'fpRate': double.parse((n['fpRate'] as double).toStringAsFixed(2)),
+            'advice':
+                'noisy tripwire — dismissed ${n['falsePositives']}/${n['total']} times; raise its bar',
+          },
+      ],
     'judgements': drained,
   };
 
