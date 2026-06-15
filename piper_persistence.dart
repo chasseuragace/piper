@@ -3,7 +3,7 @@ import 'dart:convert';
 import 'package:path/path.dart' as path;
 
 import 'piper_tts.dart';
-import 'piper_ai_client.dart';
+import 'piper_local_llm.dart';
 
 const int feedbackWindowSize = 10;
 
@@ -152,9 +152,10 @@ Future<void> compactLogsIfNeeded(String workspaceId) async {
         })
         .join('\n');
 
+    // Compaction is a cheap, low-stakes summarization — prefer the free
+    // on-device model, fall back to cloud automatically.
     String summaryText = '';
-    final client = getAIClient();
-    if (client != null) {
+    {
       final systemPrompt =
           'You are the Sigil Stone Cognitive Compactor.\n'
           'Your job is to condense a sequence of speech log entries from a pair-programming session into a single, extremely brief summary statement (2-5 sentences).\n'
@@ -170,7 +171,7 @@ Future<void> compactLogsIfNeeded(String workspaceId) async {
           '$rollupSummary\n\n'
           'Write the JSON summary for the above logs.';
 
-      final jsonResult = await client.generateJsonCompletion(
+      final jsonResult = await cheapJson(
         prompt,
         systemPrompt: systemPrompt,
         temperature: 0.5,

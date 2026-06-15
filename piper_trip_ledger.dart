@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:path/path.dart' as path;
 
 import 'piper_tts.dart';
+import 'piper_local_llm.dart';
 
 // ============================================================
 // TRIP LEDGER: STATEFUL, NOVELTY-AWARE GATING
@@ -89,6 +90,7 @@ Future<void> recordTrip(
   required String fingerprint,
   required List<String> conditions,
   required String severity,
+  Map<String, dynamic>? obs,
 }) async {
   try {
     final ledger = await _readLedger();
@@ -97,6 +99,12 @@ Future<void> recordTrip(
       'fingerprint': fingerprint,
       'conditions': conditions,
       'severity': severity,
+      // Raw numbers so a future repeat can be described to the gate in concrete
+      // terms ("3 files -> 12 files") rather than opaque fingerprints.
+      'files': (obs?['filesChanged'] as int?) ?? 0,
+      'churn':
+          ((obs?['insertions'] as int?) ?? 0) +
+          ((obs?['deletions'] as int?) ?? 0),
     };
     await _ledgerFile().writeAsString(jsonEncode(ledger));
   } catch (e) {
@@ -131,33 +139,89 @@ Future<Map<String, dynamic>> evaluateGate({
     sameSituation = last['fingerprint'] == fingerprint;
   }
 
-  // A voice switch is an intentional signal — always worth a fresh look.
-  // Otherwise a raw trip surfaces only when novel: the situation changed, or
-  // the cooldown lapsed (a gentle, spaced reminder rather than a per-turn nag).
-  final novel = !sameSituation || cooldownElapsed;
-  final gate = voiceSwitch || (rawTripped && novel);
-
+  // Decide. Clear cases are deterministic and free; the ambiguous middle — a
+  // REPEAT trip where we've spoken before — is delegated to the on-device LLM
+  // gate (free, local), which weighs "is it worth speaking again?" given when
+  // we last spoke. Deterministic novelty (situation changed OR cooldown lapsed)
+  // is the fallback when the local model is unavailable.
+  bool gate;
   String reason;
-  if (gate) {
-    reason = voiceSwitch
-        ? 'voice switch'
-        : last == null
-        ? 'first occurrence'
-        : !sameSituation
-        ? 'situation changed since last trip'
-        : 'cooldown elapsed (${secondsAgo}s)';
+  final deterministicNovel = !sameSituation || cooldownElapsed;
+
+  if (voiceSwitch) {
+    gate = true;
+    reason = 'voice switch';
   } else if (!rawTripped) {
+    gate = false;
     reason = 'no concern';
+  } else if (last == null) {
+    gate = true;
+    reason = 'first occurrence';
   } else {
-    reason = 'debounced: same situation flagged ${secondsAgo}s ago';
+    // Repeat trip — ask the on-device gate whether to re-surface.
+    final llm = await _llmGateDecision(
+      obs: obs,
+      fingerprint: fingerprint,
+      last: last,
+      secondsAgo: secondsAgo,
+    );
+    if (llm != null) {
+      gate = llm;
+      reason = llm ? 'llm gate: re-surface' : 'llm gate: stay quiet';
+    } else {
+      gate = deterministicNovel;
+      reason = deterministicNovel
+          ? (!sameSituation
+                ? 'situation changed since last trip'
+                : 'cooldown elapsed (${secondsAgo}s)')
+          : 'debounced: same situation flagged ${secondsAgo}s ago';
+    }
   }
 
   return {
     'gate': gate,
     'reason': reason,
     'fingerprint': fingerprint,
-    'novel': novel,
+    'novel': deterministicNovel,
     'lastTrip': last,
     'secondsSinceLastTrip': secondsAgo,
   };
+}
+
+// The L2 gate: a tiny, free, on-device call that decides whether a REPEAT
+// concern is worth voicing again, given how long ago we last spoke and whether
+// the situation drifted. Prefers silence. Returns null if no model is reachable
+// (caller falls back to deterministic novelty).
+Future<bool?> _llmGateDecision({
+  required Map<String, dynamic> obs,
+  required String fingerprint,
+  required Map<String, dynamic> last,
+  required int? secondsAgo,
+}) async {
+  final systemPrompt =
+      'A code observer already warned the developer about an issue a short '
+      'while ago. Decide if it should repeat the warning now. Rule: answer true '
+      'ONLY if the amount of changed code grew clearly larger since last time '
+      '(roughly half again as much or more), OR a long time has passed. If the '
+      'change is about the same or smaller, answer false to avoid nagging. '
+      'Return ONLY JSON: {"shouldSurface": true or false, "why": "few words"}.';
+
+  final files = (obs['filesChanged'] as int?) ?? 0;
+  final churn =
+      ((obs['insertions'] as int?) ?? 0) + ((obs['deletions'] as int?) ?? 0);
+  final lastFiles = (last['files'] as int?) ?? 0;
+  final lastChurn = (last['churn'] as int?) ?? 0;
+  final prompt =
+      'Last warning: "${(last['conditions'] as List?)?.join(", ")}", '
+      '${secondsAgo ?? '?'} seconds ago.\n'
+      'Code changed THEN: $lastFiles files, $lastChurn lines.\n'
+      'Code changed NOW: $files files, $churn lines.\n'
+      'Repeat the warning?';
+
+  final r = await cheapJson(prompt, systemPrompt: systemPrompt, maxTokens: 60);
+  if (r == null) return null;
+  final v = r['shouldSurface'];
+  if (v is bool) return v;
+  if (v is String) return v.toLowerCase() == 'true';
+  return null;
 }

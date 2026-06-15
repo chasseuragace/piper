@@ -26,3 +26,7 @@ test_audio.wav
 # Speech Workspace logs and state
 workspace_logs/
 
+
+# Apple bridge build artifacts
+apple_bridge/bridge
+apple_bridge/*.log

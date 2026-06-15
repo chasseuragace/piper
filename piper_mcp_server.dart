@@ -4,7 +4,6 @@ import 'dart:async';
 
 import 'piper_tts.dart';
 import 'piper_feedback_engine.dart';
-import 'piper_trip_ledger.dart';
 
 // ============================================================
 // QUEUE
@@ -348,6 +347,7 @@ Future<Map<String, dynamic>> _handleCallTool(
         fingerprint: gate['fingerprint'] as String,
         conditions: List<String>.from(trip['reasons'] as List),
         severity: (judged['severity'] ?? 'low').toString(),
+        obs: obs,
       );
 
       // STEP 4 — the balcony takes the mic, but only when truly earned.
