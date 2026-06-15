@@ -378,11 +378,25 @@ Future<Map<String, dynamic>> _handleCallTool(
   final allConcerns = List<String>.from(trip['concerns'] as List? ?? const []);
   final allReasons = List<String>.from(trip['reasons'] as List? ?? const []);
   final suppressed = await suppressedConcerns(workspaceId, allConcerns, obs);
+
+  // Co-change refinement: a change spread across files that HISTORICALLY move
+  // together is coherent coupling, not scatter. Consult the (cached, full-
+  // history) coupling map only when 'scattered' actually fired, then drop it if
+  // coupling explains the spread.
+  final scatteredIsCoupled = allConcerns.contains('scattered')
+      ? changeIsCoupled(
+          List<String>.from(obs['dirtyPaths'] as List? ?? const []),
+          await couplingMap(workspaceId),
+        )
+      : false;
+
   final liveConcerns = <String>[];
   final liveReasons = <String>[];
   for (var i = 0; i < allConcerns.length; i++) {
-    if (suppressed.contains(allConcerns[i])) continue;
-    liveConcerns.add(allConcerns[i]);
+    final c = allConcerns[i];
+    if (suppressed.contains(c)) continue;
+    if (c == 'scattered' && scatteredIsCoupled) continue;
+    liveConcerns.add(c);
     if (i < allReasons.length) liveReasons.add(allReasons[i]);
   }
   final effectiveTripped = liveConcerns.isNotEmpty;
