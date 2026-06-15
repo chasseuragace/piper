@@ -8,7 +8,15 @@ class PiperTTS {
   final int port;
   Process? _serverProcess;
   String _currentVoice = 'arngeir';
-  
+
+  // True while audio is actually being rendered/played. Lets callers reason
+  // about whether a voice switch (which restarts the server) would interrupt
+  // in-flight speech. The serialized speech queue is the real guarantee that a
+  // restart never lands mid-playback; this flag is observability on top of it.
+  bool _isSpeaking = false;
+  bool get isSpeaking => _isSpeaking;
+  String get currentVoice => _currentVoice;
+
   PiperTTS({this.host = 'localhost', this.port = 5000});
 
   /// Gets the directory where the script is located
@@ -174,6 +182,7 @@ class PiperTTS {
 
   /// Plays the generated speech using appropriate player based on OS
   Future<void> playAudio(String filePath) async {
+    _isSpeaking = true;
     try {
       String command;
       List<String> args;
@@ -194,6 +203,8 @@ class PiperTTS {
     } catch (e) {
       stderr.writeln('Error playing audio: $e');
       rethrow;
+    } finally {
+      _isSpeaking = false;
     }
   }
 

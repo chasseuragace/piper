@@ -9,9 +9,18 @@ import 'piper_feedback_engine.dart';
 // QUEUE
 // ============================================================
 
-final List<String> _speechQueue = [];
+// Every audible utterance — agent line OR balcony intervention — goes through
+// this single serialized queue. That invariant is what keeps a voice switch
+// (which restarts the Piper server, ~4s) from ever landing mid-playback: the
+// processor awaits each utterance fully, so a restart only happens in the gap
+// between finished utterances. Graceful delay, never an abrupt cut.
+final List<Map<String, String>> _speechQueue = [];
 bool _isProcessingQueue = false;
 List<String> _availableVoices = ['arngeir'];
+
+// Pending balcony judgements per workspace, drained into each tool return so
+// the agent gets the insight on the current call rather than the next one.
+final Map<String, List<Map<String, dynamic>>> _judgementQueue = {};
 
 // ============================================================
 // MCP PROTOCOL TYPES
@@ -277,69 +286,117 @@ Future<Map<String, dynamic>> _handleCallTool(
     text: sanitizedText,
     voice: voice,
     workspaceId: workspaceId,
+    source: 'agent',
   );
 
   // ==========================================================
-  // QUEUE SPEECH
+  // STEP 1 — SPEAK IMMEDIATELY (enqueue; plays async, serialized)
   // ==========================================================
 
-  _speechQueue.add('$sanitizedText|$voice');
-
-  if (!_isProcessingQueue) {
-    _isProcessingQueue = true;
-    _processQueue(tts);
-  }
-
-  // ==========================================================
-  // FEEDBACK DECISION (DETERMINISTIC PERSONA SWITCH)
-  // ==========================================================
+  _enqueueUtterance(
+    tts,
+    text: sanitizedText,
+    voice: voice,
+    workspaceId: workspaceId,
+    source: 'agent',
+  );
 
   final lastVoices = await loadLastVoices();
   final lastVoice = lastVoices[workspaceId] ?? 'arngeir';
   final isVoiceSwitch = lastVoice != voice;
   await saveLastVoice(workspaceId, voice);
 
-  Map<String, dynamic> responseJson;
+  // ==========================================================
+  // STEP 2 — OBSERVE (cheap, zero tokens): step onto the balcony
+  // ==========================================================
 
-  if (isVoiceSwitch) {
-    Map<String, dynamic> feedback;
-    final realFeedback = await generateRealFeedback(
+  final obs = await observeWorkspace(workspaceId);
+  final trip = evaluateTripWire(obs, logs, voice);
+  final tripped = (trip['tripped'] as bool) || isVoiceSwitch;
+
+  // ==========================================================
+  // STEP 3 — JUDGE (LLM) only when warranted; else fast cue
+  // ==========================================================
+
+  Map<String, dynamic> judgement;
+  if (tripped) {
+    final judged = await judgeWorkspace(
       workspaceId: workspaceId,
       voice: voice,
       logs: logs,
+      obs: obs,
+      tripReasons: List<String>.from(trip['reasons'] as List),
     );
 
-    if (realFeedback != null) {
-      feedback = realFeedback;
-    } else {
-      feedback = await generatePseudoFeedback(logs, voice, workspaceId);
-    }
+    if (judged != null) {
+      judgement = judged;
 
-    responseJson = {'status': 'played', 'persona': voice, 'feedback': feedback};
-  } else {
-    // Always-on cognitive cue: keep the speak -> think loop closed even when
-    // the persona is unchanged, so the tool stays part of reasoning rather
-    // than a fire-and-forget side effect. Cheap and deterministic (no AI call).
-    final cue = await generatePseudoFeedback(logs, voice, workspaceId);
+      // STEP 4 — the balcony takes the mic, but only when truly earned.
+      // High severity only: a different lens cutting in costs a ~4s graceful
+      // voice switch, so it must be worth interrupting the rhythm for.
+      final severity = (judged['severity'] ?? 'low').toString();
+      final spokenLine = (judged['spokenLine'] ?? '').toString().trim();
+      final recVoice = (judged['recommendedVoice'] ?? voice).toString();
 
-    // Persona-drift hint: how many consecutive turns has this single voice
-    // held the mic? A long streak suggests the work may have moved on.
-    int streak = 1;
-    for (final entry in logs.reversed) {
-      if (entry['voice'] == voice) {
-        streak++;
+      if (severity == 'high' &&
+          spokenLine.isNotEmpty &&
+          _availableVoices.contains(recVoice)) {
+        final spokenSan = sanitizeText(spokenLine, voice: recVoice);
+        // Same serialized queue → plays after the agent's line; the voice
+        // switch happens gracefully in the gap. Logged as 'observer' so it is
+        // never mistaken for agent narration and never re-triggers the judge.
+        _enqueueUtterance(
+          tts,
+          text: spokenSan,
+          voice: recVoice,
+          workspaceId: workspaceId,
+          source: 'observer',
+        );
+        await appendSpeechLog(
+          text: spokenSan,
+          voice: recVoice,
+          workspaceId: workspaceId,
+          source: 'observer',
+        );
+        judgement['spoken'] = true;
+        judgement['spokenVoice'] = recVoice;
       } else {
-        break;
+        judgement['spoken'] = false;
       }
+    } else {
+      // LLM unavailable/failed — degrade to the cheap cue, still grounded.
+      judgement = await generatePseudoFeedback(logs, voice, workspaceId);
+      judgement['observation'] = summarizeObservation(obs);
     }
+  } else {
+    // Fast path: nothing tripped. Keep the speak -> think loop closed with the
+    // cheap deterministic cue (no tokens), now grounded with the observation.
+    judgement = await generatePseudoFeedback(logs, voice, workspaceId);
+    judgement['observation'] = summarizeObservation(obs);
+    final streak = trip['streak'] as int;
     if (streak >= 5) {
-      cue['drift'] =
+      judgement['drift'] =
           'You have held the $voice lens for $streak turns. If the work has '
           'shifted, consider handing the mic to a better-matched persona.';
     }
-
-    responseJson = {'status': 'played', 'persona': voice, 'cue': cue};
   }
+
+  // ==========================================================
+  // STEP 5 — RETURN WITH THE JUDGEMENT QUEUE (this turn, not the next)
+  // ==========================================================
+
+  final wsQueue = _judgementQueue.putIfAbsent(workspaceId, () => []);
+  wsQueue.add(judgement);
+  final drained = List<Map<String, dynamic>>.from(wsQueue);
+  wsQueue.clear();
+
+  final responseJson = {
+    'status': 'played',
+    'persona': voice,
+    'voiceSwitch': isVoiceSwitch,
+    'observation': summarizeObservation(obs),
+    'judgements': drained,
+  };
 
   return {
     'content': [
@@ -354,17 +411,47 @@ Future<Map<String, dynamic>> _handleCallTool(
 // QUEUE PROCESSOR
 // ============================================================
 
+// Single entry point for ALL audible output. Enqueue, never call tts.speak
+// directly — that is the invariant that prevents mid-playback restarts.
+void _enqueueUtterance(
+  PiperTTS tts, {
+  required String text,
+  required String voice,
+  required String workspaceId,
+  required String source,
+}) {
+  _speechQueue.add({
+    'text': text,
+    'voice': voice,
+    'workspaceId': workspaceId,
+    'source': source,
+  });
+  if (!_isProcessingQueue) {
+    _isProcessingQueue = true;
+    _processQueue(tts);
+  }
+}
+
 Future<void> _processQueue(PiperTTS tts) async {
   while (_speechQueue.isNotEmpty) {
-    final nextItem = _speechQueue.removeAt(0);
+    final item = _speechQueue.removeAt(0);
+    final text = item['text'] ?? '';
+    final voice = item['voice'] ?? 'arngeir';
+    final workspaceId = item['workspaceId'] ?? Directory.current.path;
 
-    final parts = nextItem.split('|');
+    if (text.trim().isEmpty) continue;
 
-    final text = parts[0];
-
-    final voice = parts.length > 1 ? parts[1] : 'arngeir';
-
-    await tts.speak(text, voice: voice);
+    // Claim the shared audio channel (file-backed, cross-process) for the full
+    // duration of this utterance, then release. Other Piper instances see this
+    // and hold off, so audio never overlaps; the TTL clears it if we crash.
+    await markSpeaking(voice, workspaceId);
+    try {
+      await tts.speak(text, voice: voice);
+    } catch (e) {
+      stderr.writeln('Error speaking queued item: $e');
+    } finally {
+      await clearSpeaking();
+    }
   }
 
   _isProcessingQueue = false;
