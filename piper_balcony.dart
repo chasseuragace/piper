@@ -104,8 +104,14 @@ Future<Map<String, dynamic>> observeWorkspace(String workspaceId) async {
       changedPaths.add(p);
     }
 
-    // Untracked files (new work git diff won't show).
-    final status = await _git(workspaceId, ['status', '--porcelain']);
+    // Untracked files (new work git diff won't show). -uall lists each file
+    // individually; without it git collapses an untracked directory into one
+    // entry (?? scratch/), undercounting fresh work to a single file.
+    final status = await _git(workspaceId, [
+      'status',
+      '--porcelain',
+      '-uall',
+    ]);
     for (final line in status.split('\n')) {
       if (line.length < 4) continue;
       if (line.startsWith('??')) {
