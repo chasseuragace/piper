@@ -4,6 +4,7 @@ import 'dart:async';
 
 import 'piper_tts.dart';
 import 'piper_feedback_engine.dart';
+import 'piper_trip_ledger.dart';
 
 // ============================================================
 // QUEUE
@@ -312,7 +313,17 @@ Future<Map<String, dynamic>> _handleCallTool(
 
   final obs = await observeWorkspace(workspaceId);
   final trip = evaluateTripWire(obs, logs, voice);
-  final tripped = (trip['tripped'] as bool) || isVoiceSwitch;
+
+  // Stateful gate: a raw trip only surfaces if it is NOVEL (situation changed,
+  // or the cooldown lapsed). This is what stops the "source changed without
+  // tests" condition from nagging every single turn.
+  final gate = await evaluateGate(
+    workspaceId: workspaceId,
+    obs: obs,
+    rawTripped: trip['tripped'] as bool,
+    voiceSwitch: isVoiceSwitch,
+  );
+  final tripped = gate['gate'] as bool;
 
   // ==========================================================
   // STEP 3 — JUDGE (LLM) only when warranted; else fast cue
@@ -330,6 +341,14 @@ Future<Map<String, dynamic>> _handleCallTool(
 
     if (judged != null) {
       judgement = judged;
+
+      // Remember we surfaced now, so the next calls debounce against it.
+      await recordTrip(
+        workspaceId,
+        fingerprint: gate['fingerprint'] as String,
+        conditions: List<String>.from(trip['reasons'] as List),
+        severity: (judged['severity'] ?? 'low').toString(),
+      );
 
       // STEP 4 — the balcony takes the mic, but only when truly earned.
       // High severity only. It plays through the SAME serialized queue, so it
@@ -397,6 +416,7 @@ Future<Map<String, dynamic>> _handleCallTool(
     'persona': voice,
     'voiceSwitch': isVoiceSwitch,
     'observation': summarizeObservation(obs),
+    'gate': gate['reason'],
     'judgements': drained,
   };
 
