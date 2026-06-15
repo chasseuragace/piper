@@ -238,8 +238,9 @@ Map<String, dynamic> _handleListTools() {
             'feedback': {
               'type': 'object',
               'description':
-                  'Optional. Answer a prior observer concern so it stops repeating once you have handled it or it does not apply. Echo a concern id from the "concerns" field of this tool\'s previous return. '
-                  'Shape: { "re": "<concernId, e.g. missing-tests>", "ack": "intentional" | "addressing" | "not-applicable" | "disagree", "why": "<short reason>" }. '
+                  'Optional. Answer a prior observer concern so it stops repeating once you have handled it or it does not apply. '
+                  'For "re", copy EXACTLY one id from the "concerns" array of this tool\'s previous return, verbatim (e.g. "missing-tests"). '
+                  'Shape: { "re": "<concern id, verbatim>", "ack": "intentional" | "addressing" | "not-applicable" | "disagree", "why": "<short reason>" }. '
                   'Example: { "re": "large-churn", "ack": "intentional", "why": "regenerated lockfile" }.',
               'properties': {
                 're': {'type': 'string'},
@@ -349,7 +350,10 @@ Future<Map<String, dynamic>> _handleCallTool(
 
   final feedbackArg = arguments['feedback'];
   if (feedbackArg is Map) {
-    final re = (feedbackArg['re'] ?? '').toString().trim();
+    // Normalize so case/whitespace drift still matches the canonical concern id
+    // (concern ids are lowercase-kebab); the eval showed verbatim echo is the
+    // common case, this just catches the tail.
+    final re = (feedbackArg['re'] ?? '').toString().trim().toLowerCase();
     final ack = (feedbackArg['ack'] ?? '').toString().trim();
     const validAcks = {
       'intentional',
