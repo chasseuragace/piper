@@ -86,5 +86,31 @@ Future<void> main() async {
   );
   check('empty obs -> judge returns null (no hallucinated divergence)', nullJudge == null);
 
+  // Tier 1.2: "scattered" is dispersion (modules per file), not raw module count.
+  Map<String, dynamic> mk(int files, int spread, {int churn = 0}) => {
+    'isGitRepo': true,
+    'filesChanged': files,
+    'insertions': churn,
+    'deletions': 0,
+    'modules': {},
+    'moduleSpread': spread,
+    'srcTouched': true,
+    'testTouched': true, // suppress missing-tests so we isolate "scattered"
+    'dirtyPaths': [],
+    'branch': 'x',
+  };
+  check('scattered: 4 files across 3 modules -> scattered',
+      (evaluateTripWire(mk(4, 3), [], 'arngeir')['concerns'] as List).contains('scattered'));
+  check('concentrated: 10 files across 3 modules -> NOT scattered',
+      !(evaluateTripWire(mk(10, 3), [], 'arngeir')['concerns'] as List).contains('scattered'));
+
+  // Tier 1.2: deterministic severity pre-score.
+  check('prescore: large + scattered + untested -> high',
+      prescoreSeverity({'filesChanged': 15, 'insertions': 500, 'deletions': 0}, ['scattered', 'missing-tests']) == 'high');
+  check('prescore: tiny untested change -> low',
+      prescoreSeverity({'filesChanged': 1, 'insertions': 5, 'deletions': 0}, ['missing-tests']) == 'low');
+  check('prescore: clean tree -> none',
+      prescoreSeverity({'filesChanged': 0, 'insertions': 0, 'deletions': 0}, const []) == 'none');
+
   print('\n$pass passed, $fail failed');
 }

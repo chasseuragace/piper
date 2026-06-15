@@ -391,6 +391,10 @@ Future<Map<String, dynamic>> _handleCallTool(
   // even on a voice-switch turn (which judges regardless of the tripwire).
   final acknowledged = await standingAcks(workspaceId, obs);
 
+  // Deterministic severity prior from the raw facts; anchors the LLM judge and
+  // is surfaced to the agent as the system's own (model-free) opinion.
+  final prescore = prescoreSeverity(obs, liveConcerns);
+
   // Stateful gate: a raw trip only surfaces if it is NOVEL (situation changed,
   // or the cooldown lapsed). This is what stops the "source changed without
   // tests" condition from nagging every single turn.
@@ -415,6 +419,7 @@ Future<Map<String, dynamic>> _handleCallTool(
       obs: obs,
       tripReasons: liveReasons,
       acknowledged: acknowledged,
+      prescore: prescore,
     );
 
     if (judged != null) {
@@ -500,6 +505,7 @@ Future<Map<String, dynamic>> _handleCallTool(
     'voiceSwitch': isVoiceSwitch,
     'observation': summarizeObservation(obs),
     'gate': gate['reason'],
+    'prescore': prescore,
     // Canonical concern ids the agent can answer via `feedback.re` next turn.
     'concerns': liveConcerns,
     if (suppressed.isNotEmpty) 'suppressed': suppressed.toList(),

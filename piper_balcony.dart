@@ -195,7 +195,13 @@ Map<String, dynamic> evaluateTripWire(
   final spread = (obs['moduleSpread'] as int?) ?? 0;
 
   if (filesChanged >= 6) fire('sprawl', 'sprawl: $filesChanged files touched');
-  if (spread >= 3) fire('scattered', 'scattered across $spread modules');
+  // Scattered = sprayed thin, not merely "many modules". A coherent change of 9
+  // files in 3 modules is NOT scattered; 4 files in 4 modules (one per module)
+  // is. Measure dispersion as modules-per-file: near 1 means each file lives in
+  // its own module — a shotgun edit.
+  if (filesChanged >= 4 && spread >= 3 && spread / filesChanged >= 0.6) {
+    fire('scattered', 'scattered: $spread modules for $filesChanged files');
+  }
   if (churn >= 150) fire('large-churn', 'large churn ($churn lines)');
   if (obs['srcTouched'] == true && obs['testTouched'] == false) {
     fire('missing-tests', 'source changed without tests');
@@ -221,6 +227,35 @@ Map<String, dynamic> evaluateTripWire(
   };
 }
 
+// A deterministic severity prior from the raw facts alone — no model. Magnitude
+// (churn, files) plus qualitative concerns the magnitude misses (scattered,
+// missing-tests). The LLM judge anchors to this instead of inventing a severity
+// from scratch, which is where it tends to hallucinate.
+String prescoreSeverity(Map<String, dynamic> obs, List<String> concerns) {
+  final files = (obs['filesChanged'] as int?) ?? 0;
+  final churn =
+      ((obs['insertions'] as int?) ?? 0) + ((obs['deletions'] as int?) ?? 0);
+
+  var points = 0;
+  if (churn >= 400) {
+    points += 2;
+  } else if (churn >= 150) {
+    points += 1;
+  }
+  if (files >= 12) {
+    points += 2;
+  } else if (files >= 6) {
+    points += 1;
+  }
+  if (concerns.contains('scattered')) points += 1;
+  if (concerns.contains('missing-tests')) points += 1;
+
+  if (points >= 4) return 'high';
+  if (points >= 2) return 'medium';
+  if (points >= 1) return 'low';
+  return 'none';
+}
+
 // ============================================================
 // THE JUDGE: grounded intervention (LLM, only when tripped)
 // ============================================================
@@ -235,6 +270,7 @@ Future<Map<String, dynamic>?> judgeWorkspace({
   required Map<String, dynamic> obs,
   required List<String> tripReasons,
   List<Map<String, String>> acknowledged = const [],
+  String prescore = 'none',
 }) async {
   try {
     // Nothing in the working tree -> nothing to diverge from. Skip the judge so
@@ -265,6 +301,7 @@ Future<Map<String, dynamic>?> judgeWorkspace({
       narration: narration,
       tripReasons: tripReasons,
       acknowledged: acknowledged,
+      prescore: prescore,
     );
     if (diag == null) return null;
 
@@ -307,6 +344,7 @@ Future<Map<String, dynamic>?> _diagnose({
   required String narration,
   required List<String> tripReasons,
   List<Map<String, String>> acknowledged = const [],
+  String prescore = 'none',
 }) async {
   final systemPrompt =
       'You are the Balcony: an outside observer of a live coding session. The '
@@ -323,6 +361,8 @@ Future<Map<String, dynamic>?> _diagnose({
       'change has clearly grown much larger than the acknowledgement implies.\n\n'
       'Be SPARING — most turns are fine. Reserve "high" for genuine, '
       'worth-interrupting divergence.\n\n'
+      'A deterministic PRE-SCORE (from raw size facts) is given as your prior. '
+      'Start from it; move off it only for a clear story-vs-reality reason.\n\n'
       'Return ONLY JSON: {"severity": "none|low|medium|high", "verdict": '
       '"1-2 neutral sentences for the developer to read", "divergence": "what '
       'drifted, or empty"}. Raw JSON only, no markdown.';
@@ -340,6 +380,7 @@ Future<Map<String, dynamic>?> _diagnose({
       'GROUND TRUTH (git):\n${summarizeObservation(obs)}\n'
       'Changed paths: ${(obs['dirtyPaths'] as List).join(', ')}\n\n'
       'CHEAP SIGNALS THAT FIRED: ${tripReasons.isEmpty ? '(none — routine check)' : tripReasons.join('; ')}\n\n'
+      'DETERMINISTIC PRE-SCORE (severity prior from raw size facts): $prescore\n\n'
       'DEVELOPER ACKNOWLEDGEMENTS (already settled — do not re-flag these):\n$ackBlock\n\n'
       'NARRATION HISTORY (what the developer said):\n$narration\n\n'
       'Diagnose the divergence and score its severity.';
