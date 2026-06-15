@@ -75,18 +75,24 @@ class PiperTTS {
 
       stderr.writeln('Starting Piper TTS server with voice: $selectedVoice...');
       
+      // Bind explicitly to this instance's host/port so multiple instances
+      // (e.g. the main voice + a whisper side-channel) can coexist. The log is
+      // port-scoped so concurrent instances don't clobber each other's output.
+      final serverArgs =
+          '-m piper.http_server -m $modelPath --host $host --port $port';
+
       // Start the server detached
       if (Platform.isWindows) {
         // Windows: use start /B to run in background
         await Process.run('cmd', [
           '/c',
-          'start /B $pythonPath -m piper.http_server -m $modelPath > %TEMP%\\piper_server.log 2>&1'
+          'start /B $pythonPath $serverArgs > %TEMP%\\piper_server_$port.log 2>&1'
         ]);
       } else {
         // Unix: use nohup to run in background
         await Process.run('bash', [
           '-c',
-          'nohup $pythonPath -m piper.http_server -m $modelPath > /tmp/piper_server.log 2>&1 &'
+          'nohup $pythonPath $serverArgs > /tmp/piper_server_$port.log 2>&1 &'
         ]);
       }
 
@@ -119,10 +125,11 @@ class PiperTTS {
         // Windows: use taskkill
         await Process.run('taskkill', ['/F', '/IM', 'python.exe', '/FI', 'WINDOWTITLE eq piper.http_server*']);
       } else {
-        // Unix: use pkill
+        // Unix: kill only the instance bound to THIS port, so restarting one
+        // instance never takes down a sibling (e.g. the whisper channel).
         await Process.run('bash', [
           '-c',
-          'pkill -f "piper.http_server"'
+          'pkill -f "piper.http_server.*--port $port"'
         ]);
       }
       await Future.delayed(Duration(seconds: 1));
@@ -181,18 +188,22 @@ class PiperTTS {
   }
 
   /// Plays the generated speech using appropriate player based on OS
-  Future<void> playAudio(String filePath) async {
+  Future<void> playAudio(String filePath, {double volume = 1.0}) async {
     _isSpeaking = true;
     try {
       String command;
       List<String> args;
 
       if (Platform.isMacOS) {
+        // afplay -v takes a linear gain (1.0 = normal). Used to "duck" a
+        // whisper line so it sits under the main voice.
         command = 'afplay';
-        args = [filePath];
+        args = ['-v', volume.toStringAsFixed(2), filePath];
       } else {
+        // ffplay -volume is 0-100.
         command = 'ffplay';
-        args = ['-nodisp', '-autoexit', filePath];
+        final vol = (volume * 100).clamp(0, 100).round();
+        args = ['-nodisp', '-autoexit', '-volume', '$vol', filePath];
       }
 
       final process = await Process.run(command, args);
@@ -209,12 +220,12 @@ class PiperTTS {
   }
 
   /// Converts text to speech and plays it
-  Future<void> speak(String text, {String? voice}) async {
+  Future<void> speak(String text, {String? voice, double volume = 1.0}) async {
     var audioFile;
     try {
       await ensureServerRunning(voice: voice);
       audioFile = await textToSpeech(text);
-      await playAudio(audioFile);
+      await playAudio(audioFile, volume: volume);
       // Clean up the temporary file
       await File(audioFile).delete();
     } catch (e) {

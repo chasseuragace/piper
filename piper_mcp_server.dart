@@ -4,6 +4,7 @@ import 'dart:async';
 
 import 'piper_tts.dart';
 import 'piper_feedback_engine.dart';
+import 'piper_whisper.dart';
 
 // ============================================================
 // QUEUE
@@ -21,6 +22,13 @@ List<String> _availableVoices = ['arngeir'];
 // Pending balcony judgements per workspace, drained into each tool return so
 // the agent gets the insight on the current call rather than the next one.
 final Map<String, List<Map<String, dynamic>>> _judgementQueue = {};
+
+// Whisper side-channel: high-severity balcony lines play ducked on a second
+// Piper instance so they never interrupt or delay the agent's voice. Disable
+// with PIPER_WHISPER=0 to fall back to the serialized main queue (graceful gap).
+final bool _whisperEnabled = Platform.environment['PIPER_WHISPER'] != '0';
+WhisperChannel? _whisper;
+WhisperChannel _whisperChannel() => _whisper ??= WhisperChannel();
 
 // ============================================================
 // MCP PROTOCOL TYPES
@@ -342,16 +350,32 @@ Future<Map<String, dynamic>> _handleCallTool(
           spokenLine.isNotEmpty &&
           _availableVoices.contains(recVoice)) {
         final spokenSan = sanitizeText(spokenLine, voice: recVoice);
-        // Same serialized queue → plays after the agent's line; the voice
-        // switch happens gracefully in the gap. Logged as 'observer' so it is
-        // never mistaken for agent narration and never re-triggers the judge.
-        _enqueueUtterance(
-          tts,
-          text: spokenSan,
-          voice: recVoice,
-          workspaceId: workspaceId,
-          source: 'observer',
-        );
+
+        // Prefer the whisper side-channel: ducked overlap on a second instance,
+        // so the agent's voice is neither interrupted nor delayed. If whispering
+        // is disabled, or a whisper is already in flight, fall back to the
+        // serialized main queue (plays after the agent's line, graceful gap).
+        var channel = 'main';
+        if (_whisperEnabled) {
+          final launched = await _whisperChannel().whisper(
+            spokenSan,
+            recVoice,
+            workspaceId,
+          );
+          if (launched) channel = 'whisper';
+        }
+        if (channel == 'main') {
+          _enqueueUtterance(
+            tts,
+            text: spokenSan,
+            voice: recVoice,
+            workspaceId: workspaceId,
+            source: 'observer',
+          );
+        }
+
+        // Log either way (source 'observer' so it never re-triggers the judge
+        // nor counts toward the agent's lens streak).
         await appendSpeechLog(
           text: spokenSan,
           voice: recVoice,
@@ -360,6 +384,7 @@ Future<Map<String, dynamic>> _handleCallTool(
         );
         judgement['spoken'] = true;
         judgement['spokenVoice'] = recVoice;
+        judgement['spokenChannel'] = channel;
       } else {
         judgement['spoken'] = false;
       }

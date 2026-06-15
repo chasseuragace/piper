@@ -250,20 +250,28 @@ Future<List<Map<String, dynamic>>> readRecentLogs(String workspaceId) async {
 // device, so "who is speaking" must live in a file that every process can see.
 // A staleness timeout means a crashed speaker never deadlocks the channel.
 
-const Duration _speakingStaleAfter = Duration(seconds: 120);
+const Duration _channelStaleAfter = Duration(seconds: 120);
 
-File _speakingLockFile() {
+File _channelLockFile(String channel) {
   final scriptDir = PiperTTS.getScriptDir();
   final logsDir = Directory(path.join(scriptDir, 'workspace_logs'));
   if (!logsDir.existsSync()) {
     logsDir.createSync(recursive: true);
   }
-  return File(path.join(logsDir.path, 'speaking.lock'));
+  return File(path.join(logsDir.path, '$channel.lock'));
 }
 
-Future<void> markSpeaking(String voice, String workspaceId) async {
+// Generic named audio-channel lock. The main (foreground) voice uses the
+// 'speaking' channel; the ducked side voice uses 'whisper'. Distinct named
+// locks let a whisper deliberately overlap the main voice while still
+// preventing two whispers (or two foreground lines) from colliding.
+Future<void> acquireChannel(
+  String channel,
+  String voice,
+  String workspaceId,
+) async {
   try {
-    await _speakingLockFile().writeAsString(
+    await _channelLockFile(channel).writeAsString(
       jsonEncode({
         'since': DateTime.now().toIso8601String(),
         'voice': voice,
@@ -272,35 +280,42 @@ Future<void> markSpeaking(String voice, String workspaceId) async {
       }),
     );
   } catch (e) {
-    stderr.writeln('Error marking speaking state: $e');
+    stderr.writeln('Error acquiring channel $channel: $e');
   }
 }
 
-Future<void> clearSpeaking() async {
+Future<void> releaseChannel(String channel) async {
   try {
-    final f = _speakingLockFile();
+    final f = _channelLockFile(channel);
     if (await f.exists()) await f.delete();
   } catch (e) {
-    stderr.writeln('Error clearing speaking state: $e');
+    stderr.writeln('Error releasing channel $channel: $e');
   }
 }
 
-// Returns the live speaking state if some process is currently speaking and the
-// lock is fresh; null if free or stale.
-Future<Map<String, dynamic>?> currentSpeakingState() async {
+// Returns the live holder of [channel] if one exists and the lock is fresh;
+// null if free or stale (a crashed holder's lock expires via the TTL).
+Future<Map<String, dynamic>?> channelState(String channel) async {
   try {
-    final f = _speakingLockFile();
+    final f = _channelLockFile(channel);
     if (!await f.exists()) return null;
     final content = await f.readAsString();
     if (content.trim().isEmpty) return null;
     final m = jsonDecode(content) as Map<String, dynamic>;
     final since = DateTime.tryParse(m['since']?.toString() ?? '');
     if (since == null) return null;
-    if (DateTime.now().difference(since) > _speakingStaleAfter) {
-      return null; // stale lock from a crashed speaker
+    if (DateTime.now().difference(since) > _channelStaleAfter) {
+      return null; // stale lock from a crashed holder
     }
     return m;
   } catch (_) {
     return null;
   }
 }
+
+// Backward-compatible wrappers for the main foreground channel.
+Future<void> markSpeaking(String voice, String workspaceId) =>
+    acquireChannel('speaking', voice, workspaceId);
+Future<void> clearSpeaking() => releaseChannel('speaking');
+Future<Map<String, dynamic>?> currentSpeakingState() =>
+    channelState('speaking');
