@@ -30,3 +30,6 @@ workspace_logs/
 # Apple bridge build artifacts
 apple_bridge/bridge
 apple_bridge/*.log
+
+# Creative assets (local only, not tracked)
+creatives/
