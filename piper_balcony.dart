@@ -44,7 +44,16 @@ bool _looksLikeTest(String p) {
 
 // Steps off the dance floor: observes the *actual* state of the workspace
 // (git ground truth) rather than what the agent narrated. Cheap, no LLM.
-Future<Map<String, dynamic>> observeWorkspace(String workspaceId) async {
+//
+// [since] bounds the commit-activity lookup to the narration window (the oldest
+// in-window log entry). Narration tracks *activity*, and activity is commits +
+// working tree — but the tree goes blank the instant work is committed, which is
+// exactly when narration says "done, tests pass". `since == null` (fresh session)
+// skips the commit lookup.
+Future<Map<String, dynamic>> observeWorkspace(
+  String workspaceId, {
+  DateTime? since,
+}) async {
   final result = <String, dynamic>{
     'isGitRepo': false,
     'filesChanged': 0,
@@ -57,6 +66,12 @@ Future<Map<String, dynamic>> observeWorkspace(String workspaceId) async {
     'recentFile': null,
     'dirtyPaths': <String>[],
     'branch': null,
+    // Commit activity within the narration window (trimmed to stats, no diffs).
+    'recentCommits': <Map<String, dynamic>>[],
+    'committedFiles': 0,
+    'committedChurn': 0,
+    // Tests touched in the window by EITHER the tree or an in-window commit.
+    'anyTestInWindow': false,
   };
 
   try {
@@ -154,6 +169,77 @@ Future<Map<String, dynamic>> observeWorkspace(String workspaceId) async {
     result['testTouched'] = testTouched;
     result['recentFile'] = recentFile;
     result['dirtyPaths'] = changedPaths.take(20).toList();
+
+    // ----------------------------------------------------------------
+    // COMMIT ACTIVITY — time-bounded to the narration window
+    // ----------------------------------------------------------------
+    // Read commits since the oldest in-window log entry, trimmed to the SAME
+    // shape as the tree observation (subject + numstat rollups, never diff
+    // bodies). Pure git, zero model cost. This is what lets a claim like
+    // "done, tests pass" be checked against the commit that did it, instead of
+    // an empty post-commit tree.
+    bool anyCommittedTest = false;
+    if (since != null) {
+      final log = await _git(workspaceId, [
+        'log',
+        '--since=${since.toUtc().toIso8601String()}',
+        '--no-merges',
+        '--numstat',
+        // \u001f-prefixed header line separates each commit's "hash<TAB>subject"
+        // from the tab-separated numstat rows that follow it.
+        '--format=\u001f%h\t%s',
+        '-n',
+        '5',
+      ]);
+
+      final commits = <Map<String, dynamic>>[];
+      Map<String, dynamic>? cur;
+      Set<String> curModules = <String>{};
+      int committedFiles = 0, committedChurn = 0;
+      for (final line in log.split('\n')) {
+        if (line.startsWith('\u001f')) {
+          final parts = line.substring(1).split('\t');
+          curModules = <String>{};
+          cur = {
+            'hash': parts.isNotEmpty ? parts[0] : '',
+            'subject': parts.length > 1 ? parts[1] : '',
+            'files': 0,
+            'insertions': 0,
+            'deletions': 0,
+            'moduleSpread': 0,
+            'testTouched': false,
+          };
+          commits.add(cur);
+        } else if (cur != null && line.trim().isNotEmpty) {
+          final cols = line.split('\t');
+          if (cols.length < 3) continue;
+          final ins = int.tryParse(cols[0]) ?? 0; // '-' for binary => 0
+          final del = int.tryParse(cols[1]) ?? 0;
+          final p = cols[2].trim();
+          if (p.isEmpty) continue;
+          cur['files'] = (cur['files'] as int) + 1;
+          cur['insertions'] = (cur['insertions'] as int) + ins;
+          cur['deletions'] = (cur['deletions'] as int) + del;
+          curModules.add(_moduleOf(p));
+          cur['moduleSpread'] = curModules.length;
+          if (_looksLikeTest(p)) {
+            cur['testTouched'] = true;
+            anyCommittedTest = true;
+          }
+          committedFiles++;
+          committedChurn += ins + del;
+        }
+      }
+
+      result['recentCommits'] = commits;
+      result['committedFiles'] = committedFiles;
+      result['committedChurn'] = committedChurn;
+    }
+
+    // Tests count as present in the window if the tree OR any in-window commit
+    // touched them — this is what stops "missing-tests" from firing right after
+    // the tests were committed (they leave the dirty tree, but the work is done).
+    result['anyTestInWindow'] = testTouched || anyCommittedTest;
   } catch (e) {
     stderr.writeln('Error observing workspace: $e');
   }
@@ -164,11 +250,26 @@ Future<Map<String, dynamic>> observeWorkspace(String workspaceId) async {
 String summarizeObservation(Map<String, dynamic> obs) {
   if (obs['isGitRepo'] != true) return 'No git ground truth available.';
   final modules = (obs['modules'] as Map).keys.join(', ');
-  return 'branch=${obs['branch']}, ${obs['filesChanged']} files '
+  final base =
+      'branch=${obs['branch']}, ${obs['filesChanged']} files '
       '(+${obs['insertions']}/-${obs['deletions']}) across '
       '${obs['moduleSpread']} module(s) [$modules]; '
       'src=${obs['srcTouched']} tests=${obs['testTouched']}; '
       'hot=${obs['recentFile'] ?? '-'}';
+
+  // Recent commits are part of ground truth: their subjects carry the
+  // developer's own committed claims, and the work the tree no longer shows.
+  final commits = (obs['recentCommits'] as List?) ?? const [];
+  if (commits.isEmpty) return base;
+  final commitStr = commits.map((c) {
+    final m = c as Map;
+    final subj = (m['subject'] ?? '').toString();
+    final trimmed = subj.length > 50 ? '${subj.substring(0, 49)}…' : subj;
+    final tests = m['testTouched'] == true ? ' +tests' : '';
+    return '${m['hash']} "$trimmed" '
+        '(${m['files']}f +${m['insertions']}/-${m['deletions']}$tests)';
+  }).join(' | ');
+  return '$base; commits[${commits.length}]: $commitStr';
 }
 
 // ============================================================
@@ -203,7 +304,11 @@ Map<String, dynamic> evaluateTripWire(
     fire('scattered', 'scattered: $spread modules for $filesChanged files');
   }
   if (churn >= 150) fire('large-churn', 'large churn ($churn lines)');
-  if (obs['srcTouched'] == true && obs['testTouched'] == false) {
+  // Tests committed earlier in the window count — otherwise this nags on the
+  // very next source edit after you commit the tests (they left the dirty tree).
+  final testsInWindow =
+      obs['testTouched'] == true || obs['anyTestInWindow'] == true;
+  if (obs['srcTouched'] == true && !testsInWindow) {
     fire('missing-tests', 'source changed without tests');
   }
 
@@ -273,10 +378,14 @@ Future<Map<String, dynamic>?> judgeWorkspace({
   String prescore = 'none',
 }) async {
   try {
-    // Nothing in the working tree -> nothing to diverge from. Skip the judge so
-    // it cannot hallucinate drift by comparing a clean tree against stale
-    // narration still in the log window (e.g. just after a commit).
-    if (((obs['filesChanged'] as int?) ?? 0) == 0) return null;
+    // Nothing in the working tree AND nothing committed in the window -> nothing
+    // to diverge from; skip the judge so it cannot hallucinate drift against
+    // stale narration. But a clean tree with in-window COMMITS is not empty: the
+    // tree going clean is exactly the "done, shipped" moment, and the commits
+    // are the ground truth to check the narration against — so we proceed.
+    final treeClean = (((obs['filesChanged'] as int?) ?? 0) == 0);
+    final noCommits = ((obs['recentCommits'] as List?) ?? const []).isEmpty;
+    if (treeClean && noCommits) return null;
 
     final client = getAIClient();
     if (client == null) return null;
@@ -355,6 +464,10 @@ Future<Map<String, dynamic>?> _diagnose({
       'but the diff is large; narrated one module but edited another; claimed '
       'done/tests pass but no test changed; long narration, nothing changed '
       '(spinning); many changes, no narration (going dark).\n\n'
+      'GROUND TRUTH may include recent COMMITS (hash, subject, stats) alongside '
+      'the working tree. A claim like "done" or "tests pass" is SATISFIED if a '
+      'listed commit supports it — do not flag drift merely because the '
+      'uncommitted diff is empty.\n\n'
       'The developer may have ACKNOWLEDGED some concerns (intentional, '
       'not-applicable, being-addressed, or disputed). A listed acknowledgement '
       'is SETTLED: do not raise that concern again. Only override it if the '

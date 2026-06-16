@@ -344,7 +344,13 @@ Future<Map<String, dynamic>> _handleCallTool(
   // STEP 2 — OBSERVE (cheap, zero tokens): step onto the balcony
   // ==========================================================
 
-  final obs = await observeWorkspace(workspaceId);
+  // Bound the commit-activity lookup to the narration window: the oldest
+  // in-window log entry marks where the current "story" begins, so we only
+  // correlate commits made since then. No logs (fresh session) => no window.
+  final windowStart = logs.isEmpty
+      ? null
+      : DateTime.tryParse(logs.first['timestamp']?.toString() ?? '');
+  final obs = await observeWorkspace(workspaceId, since: windowStart);
   final trip = evaluateTripWire(obs, logs, voice);
 
   // ==========================================================
