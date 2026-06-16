@@ -45,11 +45,14 @@ bool _looksLikeTest(String p) {
 // Steps off the dance floor: observes the *actual* state of the workspace
 // (git ground truth) rather than what the agent narrated. Cheap, no LLM.
 //
-// [since] bounds the commit-activity lookup to the narration window (the oldest
-// in-window log entry). Narration tracks *activity*, and activity is commits +
-// working tree — but the tree goes blank the instant work is committed, which is
-// exactly when narration says "done, tests pass". `since == null` (fresh session)
-// skips the commit lookup.
+// [since] marks the narration window start (oldest in-window log entry).
+// Narration tracks *activity*, and activity is commits + working tree — but the
+// tree goes blank the instant work is committed, which is exactly when narration
+// says "done, tests pass". We read the last several commits by COUNT (so a
+// commit made just BEFORE the window — the one being claimed — is still seen)
+// and tag each as in-window (ts >= since) or older. Window commits drive the
+// rollups + clean-tree guard; the older trail gives the judge the session arc
+// and lets feedback say "last commit was N ago" instead of "no commit".
 Future<Map<String, dynamic>> observeWorkspace(
   String workspaceId, {
   DateTime? since,
@@ -66,10 +69,14 @@ Future<Map<String, dynamic>> observeWorkspace(
     'recentFile': null,
     'dirtyPaths': <String>[],
     'branch': null,
-    // Commit activity within the narration window (trimmed to stats, no diffs).
+    // Commits made within the narration window (trimmed to stats, no diffs).
     'recentCommits': <Map<String, dynamic>>[],
+    // Commits OLDER than the window — session trajectory / claim-freshness.
+    'olderCommits': <Map<String, dynamic>>[],
     'committedFiles': 0,
     'committedChurn': 0,
+    // Age (seconds) of the newest commit overall, or null if none.
+    'lastCommitAgeSeconds': null,
     // Tests touched in the window by EITHER the tree or an in-window commit.
     'anyTestInWindow': false,
   };
@@ -171,70 +178,85 @@ Future<Map<String, dynamic>> observeWorkspace(
     result['dirtyPaths'] = changedPaths.take(20).toList();
 
     // ----------------------------------------------------------------
-    // COMMIT ACTIVITY — time-bounded to the narration window
+    // COMMIT ACTIVITY — last N by count, partitioned by the window
     // ----------------------------------------------------------------
-    // Read commits since the oldest in-window log entry, trimmed to the SAME
+    // Read the last several commits by COUNT (not --since), trimmed to the SAME
     // shape as the tree observation (subject + numstat rollups, never diff
-    // bodies). Pure git, zero model cost. This is what lets a claim like
-    // "done, tests pass" be checked against the commit that did it, instead of
-    // an empty post-commit tree.
+    // bodies) plus a committer timestamp. Pure git, zero model cost. By-count so
+    // a commit made just BEFORE the window — the one an "I committed it" claim
+    // refers to — is still seen; we then split in-window vs older by timestamp.
     bool anyCommittedTest = false;
-    if (since != null) {
-      final log = await _git(workspaceId, [
-        'log',
-        '--since=${since.toUtc().toIso8601String()}',
-        '--no-merges',
-        '--numstat',
-        // \u001f-prefixed header line separates each commit's "hash<TAB>subject"
-        // from the tab-separated numstat rows that follow it.
-        '--format=\u001f%h\t%s',
-        '-n',
-        '5',
-      ]);
+    final log = await _git(workspaceId, [
+      'log',
+      '--no-merges',
+      '--numstat',
+      // \u001f-prefixed header line separates each commit's
+      // "hash<TAB>unixtime<TAB>subject" from the tab-separated numstat rows
+      // that follow it. %ct is the committer date as a unix timestamp.
+      '--format=\u001f%h\t%ct\t%s',
+      '-n',
+      '12',
+    ]);
 
-      final commits = <Map<String, dynamic>>[];
-      Map<String, dynamic>? cur;
-      Set<String> curModules = <String>{};
-      int committedFiles = 0, committedChurn = 0;
-      for (final line in log.split('\n')) {
-        if (line.startsWith('\u001f')) {
-          final parts = line.substring(1).split('\t');
-          curModules = <String>{};
-          cur = {
-            'hash': parts.isNotEmpty ? parts[0] : '',
-            'subject': parts.length > 1 ? parts[1] : '',
-            'files': 0,
-            'insertions': 0,
-            'deletions': 0,
-            'moduleSpread': 0,
-            'testTouched': false,
-          };
-          commits.add(cur);
-        } else if (cur != null && line.trim().isNotEmpty) {
-          final cols = line.split('\t');
-          if (cols.length < 3) continue;
-          final ins = int.tryParse(cols[0]) ?? 0; // '-' for binary => 0
-          final del = int.tryParse(cols[1]) ?? 0;
-          final p = cols[2].trim();
-          if (p.isEmpty) continue;
-          cur['files'] = (cur['files'] as int) + 1;
-          cur['insertions'] = (cur['insertions'] as int) + ins;
-          cur['deletions'] = (cur['deletions'] as int) + del;
-          curModules.add(_moduleOf(p));
-          cur['moduleSpread'] = curModules.length;
-          if (_looksLikeTest(p)) {
-            cur['testTouched'] = true;
-            anyCommittedTest = true;
-          }
-          committedFiles++;
-          committedChurn += ins + del;
-        }
+    final allCommits = <Map<String, dynamic>>[];
+    Map<String, dynamic>? cur;
+    Set<String> curModules = <String>{};
+    final nowSec = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+    final sinceMs = since?.millisecondsSinceEpoch;
+    for (final line in log.split('\n')) {
+      if (line.startsWith('\u001f')) {
+        final parts = line.substring(1).split('\t');
+        final ts = parts.length > 1 ? (int.tryParse(parts[1]) ?? 0) : 0;
+        curModules = <String>{};
+        cur = {
+          'hash': parts.isNotEmpty ? parts[0] : '',
+          'subject': parts.length > 2 ? parts[2] : '',
+          'ageSeconds': ts > 0 ? nowSec - ts : null,
+          // In-window iff committed at/after the narration started.
+          'inWindow': sinceMs != null && ts * 1000 >= sinceMs,
+          'files': 0,
+          'insertions': 0,
+          'deletions': 0,
+          'moduleSpread': 0,
+          'testTouched': false,
+        };
+        allCommits.add(cur);
+      } else if (cur != null && line.trim().isNotEmpty) {
+        final cols = line.split('\t');
+        if (cols.length < 3) continue;
+        final ins = int.tryParse(cols[0]) ?? 0; // '-' for binary => 0
+        final del = int.tryParse(cols[1]) ?? 0;
+        final p = cols[2].trim();
+        if (p.isEmpty) continue;
+        cur['files'] = (cur['files'] as int) + 1;
+        cur['insertions'] = (cur['insertions'] as int) + ins;
+        cur['deletions'] = (cur['deletions'] as int) + del;
+        curModules.add(_moduleOf(p));
+        cur['moduleSpread'] = curModules.length;
+        if (_looksLikeTest(p)) cur['testTouched'] = true;
       }
-
-      result['recentCommits'] = commits;
-      result['committedFiles'] = committedFiles;
-      result['committedChurn'] = committedChurn;
     }
+
+    // Partition: window commits drive the rollups + clean-tree guard; the older
+    // trail (capped) is context only. Rollups stay window-scoped so the
+    // missing-tests fix and the line-279 guard keep their Part A semantics.
+    final recentCommits =
+        allCommits.where((c) => c['inWindow'] == true).toList();
+    final olderCommits =
+        allCommits.where((c) => c['inWindow'] != true).take(7).toList();
+    int committedFiles = 0, committedChurn = 0;
+    for (final c in recentCommits) {
+      committedFiles += c['files'] as int;
+      committedChurn += (c['insertions'] as int) + (c['deletions'] as int);
+      if (c['testTouched'] == true) anyCommittedTest = true;
+    }
+
+    result['recentCommits'] = recentCommits;
+    result['olderCommits'] = olderCommits;
+    result['committedFiles'] = committedFiles;
+    result['committedChurn'] = committedChurn;
+    result['lastCommitAgeSeconds'] =
+        allCommits.isNotEmpty ? allCommits.first['ageSeconds'] : null;
 
     // Tests count as present in the window if the tree OR any in-window commit
     // touched them — this is what stops "missing-tests" from firing right after
@@ -257,19 +279,34 @@ String summarizeObservation(Map<String, dynamic> obs) {
       'src=${obs['srcTouched']} tests=${obs['testTouched']}; '
       'hot=${obs['recentFile'] ?? '-'}';
 
-  // Recent commits are part of ground truth: their subjects carry the
+  String trimSubj(Map m) {
+    final subj = (m['subject'] ?? '').toString();
+    return subj.length > 50 ? '${subj.substring(0, 49)}…' : subj;
+  }
+
+  // In-window commits are part of ground truth: their subjects carry the
   // developer's own committed claims, and the work the tree no longer shows.
   final commits = (obs['recentCommits'] as List?) ?? const [];
-  if (commits.isEmpty) return base;
-  final commitStr = commits.map((c) {
-    final m = c as Map;
-    final subj = (m['subject'] ?? '').toString();
-    final trimmed = subj.length > 50 ? '${subj.substring(0, 49)}…' : subj;
-    final tests = m['testTouched'] == true ? ' +tests' : '';
-    return '${m['hash']} "$trimmed" '
-        '(${m['files']}f +${m['insertions']}/-${m['deletions']}$tests)';
-  }).join(' | ');
-  return '$base; commits[${commits.length}]: $commitStr';
+  var out = base;
+  if (commits.isNotEmpty) {
+    final commitStr = commits.map((c) {
+      final m = c as Map;
+      final tests = m['testTouched'] == true ? ' +tests' : '';
+      return '${m['hash']} "${trimSubj(m)}" '
+          '(${m['files']}f +${m['insertions']}/-${m['deletions']}$tests)';
+    }).join(' | ');
+    out = '$out; commits[${commits.length}]: $commitStr';
+  }
+
+  // The older trail (subjects only) gives the judge the session arc — what has
+  // actually landed before this window — without re-stating full stats.
+  final older = (obs['olderCommits'] as List?) ?? const [];
+  if (older.isNotEmpty) {
+    final olderStr =
+        older.map((c) => '${(c as Map)['hash']} "${trimSubj(c)}"').join(', ');
+    out = '$out; earlier: $olderStr';
+  }
+  return out;
 }
 
 // ============================================================
@@ -354,11 +391,136 @@ String prescoreSeverity(Map<String, dynamic> obs, List<String> concerns) {
   }
   if (concerns.contains('scattered')) points += 1;
   if (concerns.contains('missing-tests')) points += 1;
+  // A claim that contradicts ground truth (said tests pass / committed / done
+  // when git disagrees) is the documented #1 agent failure — weight it.
+  if (concerns.contains('test-claim')) points += 1;
+  if (concerns.contains('completion-claim')) points += 1;
 
   if (points >= 4) return 'high';
   if (points >= 2) return 'medium';
   if (points >= 1) return 'low';
   return 'none';
+}
+
+// ============================================================
+// CLAIM DETECTION: narration-vs-reality contradictions (zero tokens)
+// ============================================================
+//
+// The agent's CURRENT utterance is the freshest claim; git (tree + commits,
+// including the older trail) is reality. We match formulaic AI claim phrasing —
+// these are repetitive verbal tics, not creative prose, so keyword matching is
+// reliable here — and fire ONLY when a claim co-occurs with a contradicting
+// fact. A claim alone never fires; reality must disagree. Each fire is
+// {id, reason}, the same shape the tripwire emits, so it flows through the
+// existing suppress / gate / ack / calibration path untouched.
+List<Map<String, String>> detectClaims(
+  String currentText,
+  Map<String, dynamic> obs,
+) {
+  final fires = <Map<String, String>>[];
+  final text = currentText.toLowerCase();
+
+  // True iff one of [phrases] appears AND is not negated/questioned nearby.
+  bool claimed(List<String> phrases) {
+    for (final p in phrases) {
+      var from = 0;
+      while (true) {
+        final idx = text.indexOf(p, from);
+        if (idx < 0) break;
+        from = idx + p.length;
+        // Negation guard: a negator in the ~24 chars before the match flips it
+        // ("this is NOT done", "yet to verify", "about to commit", "should I").
+        final preStart = (idx - 24) < 0 ? 0 : idx - 24;
+        final pre = text.substring(preStart, idx);
+        final negated = RegExp(
+          r"\b(not|isn'?t|aren'?t|wasn'?t|no|don'?t|doesn'?t|didn'?t|won'?t|"
+          r"can'?t|hardly|never|yet to|need(s)? to|about to|trying to|going to|"
+          r"want to|should i|do i|will i|let me|to)\b\s*$",
+        ).hasMatch(pre);
+        // Question guard: a '?' within ~24 chars after means it's not a claim.
+        final postEnd = (from + 24) > text.length ? text.length : from + 24;
+        final questioned = text.substring(idx, postEnd).contains('?');
+        if (!negated && !questioned) return true;
+      }
+    }
+    return false;
+  }
+
+  final filesChanged = (obs['filesChanged'] as int?) ?? 0;
+  final srcTouched = obs['srcTouched'] == true;
+  final recentCommits = (obs['recentCommits'] as List?) ?? const [];
+  final noWindowCommit = recentCommits.isEmpty;
+  final lastAge = obs['lastCommitAgeSeconds'] as int?;
+
+  // Phrase the staleness of the newest commit for a concrete reason line.
+  String commitTrail() {
+    if (lastAge == null) return 'no commits found';
+    final mins = lastAge ~/ 60;
+    if (mins < 1) return 'last commit <1 min ago';
+    if (mins < 90) return 'last commit ${mins}m ago, before this work';
+    return 'last commit ${lastAge ~/ 3600}h ago, before this work';
+  }
+
+  // --- test-claim: said tests pass/verified, but no tests in the window ---
+  final saysTestsPass = claimed([
+    'tests pass',
+    'test passes',
+    'tests passing',
+    'all green',
+    'are green',
+    'go green',
+    'went green',
+    'verified',
+    'added tests',
+    'wrote tests',
+    'test coverage',
+  ]);
+  if (saysTestsPass && srcTouched && obs['anyTestInWindow'] != true) {
+    fires.add({
+      'id': 'test-claim',
+      'reason': 'narration claims tests pass/verified, but no test changed in '
+          'the window (tree or commits)',
+    });
+  }
+
+  // --- completion-claim: said committed/shipped/done, but git disagrees ---
+  // Two sub-rules, one concern. Commit-claim is the rock-solid form (Part A);
+  // done-claim is the softer "premature done" (claimed finished, work still
+  // uncommitted in the tree).
+  final saysCommitted = claimed([
+    'committed',
+    'pushed',
+    'shipped',
+    'landed it',
+    'merged',
+  ]);
+  final saysDone = claimed([
+    'done',
+    'successfully',
+    'should now work',
+    'now works',
+    'fully implemented',
+    'fully working',
+    'wired in',
+    'all set',
+    'good to go',
+  ]);
+  if (saysCommitted && noWindowCommit) {
+    fires.add({
+      'id': 'completion-claim',
+      'reason':
+          'narration claims work was committed/shipped, but no commit landed '
+          'in this window (${commitTrail()})',
+    });
+  } else if (saysDone && filesChanged > 0 && noWindowCommit) {
+    fires.add({
+      'id': 'completion-claim',
+      'reason': 'narration claims the work is done, but it is still uncommitted '
+          'in the tree ($filesChanged file(s) dirty, ${commitTrail()})',
+    });
+  }
+
+  return fires;
 }
 
 // ============================================================

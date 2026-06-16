@@ -353,6 +353,12 @@ Future<Map<String, dynamic>> _handleCallTool(
   final obs = await observeWorkspace(workspaceId, since: windowStart);
   final trip = evaluateTripWire(obs, logs, voice);
 
+  // Claim-detection: contradictions between what the agent JUST narrated (the
+  // freshest claim) and git ground truth — said tests pass / committed / done
+  // when reality disagrees. Deterministic, zero model. Fires merge into the
+  // same concern/reason channel as the tripwire below.
+  final claimFires = detectClaims(sanitizedText, obs);
+
   // ==========================================================
   // STEP 2.5 — AGENT FEEDBACK: record any ack, then silence acked concerns
   // ==========================================================
@@ -389,8 +395,14 @@ Future<Map<String, dynamic>> _handleCallTool(
     }
   }
 
-  final allConcerns = List<String>.from(trip['concerns'] as List? ?? const []);
-  final allReasons = List<String>.from(trip['reasons'] as List? ?? const []);
+  final allConcerns = <String>[
+    ...List<String>.from(trip['concerns'] as List? ?? const []),
+    ...claimFires.map((f) => f['id']!),
+  ];
+  final allReasons = <String>[
+    ...List<String>.from(trip['reasons'] as List? ?? const []),
+    ...claimFires.map((f) => f['reason']!),
+  ];
   final suppressed = await suppressedConcerns(workspaceId, allConcerns, obs);
 
   // Co-change refinement: a change spread across files that HISTORICALLY move
