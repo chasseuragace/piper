@@ -182,6 +182,13 @@ Map<String, dynamic> _handleInitialize(JsonRpcRequest request) {
       'that judgment keeps you silent. Silence is the exception you must '
       'justify, not speech. Keep spoken text concise, professional, and '
       'fluid.\n\n'
+      'The highest-value moment to speak is when you are putting a question to '
+      'the user: a design decision, a trade-off between approaches, a request '
+      'for approval, or a clarification you need before proceeding. The user '
+      'may be away from the screen, and the spoken question is what pulls them '
+      'back to answer it. Whenever you ask the user something that gates your '
+      'next step, speak the question (or its essence) aloud — an unspoken '
+      'question is the clearest case of unjustified silence.\n\n'
       'Each voice is a thinking mode, not a costume. Pick the one whose focus '
       'matches the work, and switch when the work changes nature (design -> '
       'testing -> security -> optimization). Switching returns a transition '
@@ -211,6 +218,7 @@ Map<String, dynamic> _handleListTools() {
         'name': 'speak',
         'description':
             'Speak your current thinking aloud. This is not narration — it is an external channel for your reasoning that keeps the user oriented and returns a short cognitive cue that sharpens your next step. Load this tool at session start and use it by default; do not wait to be asked. Speaking is the default, not a decision to deliberate — speak unless the step is purely mechanical (a bare file read or routine command with no decision in it). Do not evaluate whether a step is "important enough"; that judgment keeps you silent. Silence is the exception you must justify, not speech.\n'
+            'Speak above all when you are asking the user a question — a design decision, a trade-off between approaches, a request for approval, or a clarification that gates your next step. The user may be away from the screen, and the spoken question is what pulls them back to answer it; an unspoken question is the clearest case of unjustified silence.\n'
             'Each voice is a thinking mode, not a costume. Pick the one whose focus matches the work, and switch when the work changes — switching returns a transition nudge that helps you re-focus. Do not act out a character; let the voice color the framing, not hijack the content.\n'
             '- arngeir (Arngeir): architecture, design intent, high-level direction, calm pacing.\n'
             '- tulius (General Tullius): robustness, error handling, defensive execution, tactical strictness.\n'
