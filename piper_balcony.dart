@@ -467,6 +467,7 @@ List<Map<String, String>> detectClaims(
     'test passes',
     'tests passing',
     'all green',
+    'all-green', // real 2026 agent tic (esp. weaker agents: "verified all-green")
     'are green',
     'go green',
     'went green',
@@ -504,6 +505,12 @@ List<Map<String, String>> detectClaims(
     'wired in',
     'all set',
     'good to go',
+    // "complete" is the #1 AI completion word but also a goal ("complete the
+    // port"); only the phrase forms below are claims, never bare "complete".
+    'is complete',
+    'now complete',
+    'fully complete',
+    'finalized',
   ]);
   if (saysCommitted && noWindowCommit) {
     fires.add({
@@ -627,9 +634,12 @@ Future<Map<String, dynamic>?> _diagnose({
       'done/tests pass but no test changed; long narration, nothing changed '
       '(spinning); many changes, no narration (going dark).\n\n'
       'GROUND TRUTH may include recent COMMITS (hash, subject, stats) alongside '
-      'the working tree. A claim like "done" or "tests pass" is SATISFIED if a '
-      'listed commit supports it — do not flag drift merely because the '
-      'uncommitted diff is empty.\n\n'
+      'the working tree. Commit SUBJECTS are the developer\'s own claims, not '
+      'proof — a subject saying "verified", "all-green" or "all tests passing" '
+      'is NOT evidence. A "done"/"committed" claim IS satisfied by a listed '
+      'commit existing (so do not flag drift just because the uncommitted diff '
+      'is empty), but a "tests pass" claim is satisfied ONLY by a commit shown '
+      'with +tests (it actually changed tests), never by the subject wording.\n\n'
       'The developer may have ACKNOWLEDGED some concerns (intentional, '
       'not-applicable, being-addressed, or disputed). A listed acknowledgement '
       'is SETTLED: do not raise that concern again. Only override it if the '
