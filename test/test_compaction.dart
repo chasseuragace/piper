@@ -1,6 +1,6 @@
 import 'dart:io';
 import 'dart:convert';
-import 'piper_feedback_engine.dart';
+import '../src/feedback/piper_feedback_engine.dart';
 
 void main() async {
   print('=== Piper Log Compaction Engine Test ===');

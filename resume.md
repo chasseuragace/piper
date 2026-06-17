@@ -28,14 +28,18 @@ Model tiers in play: on-device (free, dumbest), Groq free (smarter, rate-limited
 8. **judge** (`judgeWorkspace`, only when gated) → 3 passes: diagnose (cloud) → route lens (local) → compose spoken line (local); high severity speaks through the queue
 9. return `{ observation, gate, prescore, concerns, suppressed?, calibration?, judgements }`
 
-## Module map (all re-exported via `piper_feedback_engine.dart` barrel)
+## Layout
 
-- `piper_balcony.dart` — observeWorkspace, evaluateTripWire, **prescoreSeverity**, judgeWorkspace + 3 judge passes
-- `piper_trip_ledger.dart` — stateful gate, fingerprint/debounce, **ack ledger** (recordAck/suppressedConcerns/standingAcks)
-- `piper_calibration.dart` — **ack-stream calibration** (recordAckStat/calibrationReport/noisyConcerns)
-- `piper_cochange.dart` — **co-change coupling** (parseCoChange/changeIsCoupled/couplingMap)
-- `piper_feedback.dart` — generateRealFeedback / generatePseudoFeedback (transition nudges, fast cue)
-- `piper_personas.dart`, `piper_persistence.dart`, `piper_ai_client.dart`, `piper_local_llm.dart`
+Entry points stay at repo root (external MCP configs + `speak.sh` reference them by path; `getScriptDir()` resolves assets relative to the running entry point): `piper_tts.dart`, `piper_mcp_server.dart` (stdio), `piper_http_mcp_server.dart` (http). `report_calibration.dart` also stays at root (reads root `workspace_logs/`). Library code lives under `src/` (concern-grouped); tests under `test/`.
+
+## Module map (all re-exported via `src/feedback/piper_feedback_engine.dart` barrel)
+
+- `src/observation/piper_balcony.dart` — observeWorkspace, evaluateTripWire, **prescoreSeverity**, judgeWorkspace + 3 judge passes
+- `src/observation/piper_trip_ledger.dart` — stateful gate, fingerprint/debounce, **ack ledger** (recordAck/suppressedConcerns/standingAcks/forgetWorkspaceLedger)
+- `src/observation/piper_cochange.dart` — **co-change coupling** (parseCoChange/changeIsCoupled/couplingMap)
+- `src/feedback/piper_calibration.dart` — **ack-stream calibration** (recordAckStat/calibrationReport/noisyConcerns)
+- `src/feedback/piper_feedback.dart` — generateRealFeedback / generatePseudoFeedback (transition nudges, fast cue)
+- `src/persona/piper_personas.dart`, `src/core/piper_persistence.dart`, `src/llm/piper_ai_client.dart`, `src/llm/piper_local_llm.dart`
 
 ---
 
@@ -52,7 +56,7 @@ Model tiers in play: on-device (free, dumbest), Groq free (smarter, rate-limited
 - `40b782b` **Tier 1.2** — `scattered` = dispersion (modules-per-file ≥ 0.6, ≥4 files), not raw module count; **prescoreSeverity** anchors the judge
 - `ff5f31a` **co-change coupling** — refine `scattered` with git-history coupling (cross-pollination from `the_mcp` activity-intelligence; mines ALL authors, cached, consulted only when scattered fires)
 
-Tests: `test_phase1_feedback.dart` (14/14), `test_calibration.dart` (5/5), `test_cochange.dart` (7/7). Run: `dart run test_<x>.dart`. Analyze: `dart analyze <files>`.
+Tests (maintained, deterministic): `test/test_phase1_feedback.dart` (17/17), `test/test_calibration.dart` (5/5), `test/test_cochange.dart` (7/7). Run: `dart run test/test_<x>.dart`. Analyze: `dart analyze .`. (`test/test_compaction.dart` + `test/test_normalization.dart` are LLM-endpoint integration tests — model-dependent, not part of the deterministic suite.)
 
 ---
 

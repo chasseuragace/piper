@@ -1,9 +1,9 @@
 import 'dart:io';
 import 'package:path/path.dart' as path;
 
-import 'piper_personas.dart';
-import 'piper_ai_client.dart';
-import 'piper_local_llm.dart';
+import '../persona/piper_personas.dart';
+import '../llm/piper_ai_client.dart';
+import '../llm/piper_local_llm.dart';
 
 // ============================================================
 // THE BALCONY: READ-ONLY WORKSPACE OBSERVATION (ZERO TOKENS)

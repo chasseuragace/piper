@@ -1,8 +1,8 @@
 import 'dart:io';
 import 'dart:math';
 
-import 'piper_personas.dart';
-import 'piper_ai_client.dart';
+import '../persona/piper_personas.dart';
+import '../llm/piper_ai_client.dart';
 
 final Random _random = Random();
 

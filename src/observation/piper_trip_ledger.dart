@@ -2,8 +2,8 @@ import 'dart:io';
 import 'dart:convert';
 import 'package:path/path.dart' as path;
 
-import 'piper_tts.dart';
-import 'piper_local_llm.dart';
+import '../../piper_tts.dart';
+import '../llm/piper_local_llm.dart';
 
 // ============================================================
 // TRIP LEDGER: STATEFUL, NOVELTY-AWARE GATING

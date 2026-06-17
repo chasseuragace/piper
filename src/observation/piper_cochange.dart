@@ -2,7 +2,7 @@ import 'dart:io';
 import 'dart:convert';
 import 'package:path/path.dart' as path;
 
-import 'piper_tts.dart';
+import '../../piper_tts.dart';
 
 // ============================================================
 // CO-CHANGE COUPLING: learned structure, not a heuristic

@@ -1,4 +1,4 @@
-import 'piper_feedback_engine.dart';
+import '../src/feedback/piper_feedback_engine.dart';
 
 void main() {
   print('=== Running Persona Speech Normalization Tests ===');

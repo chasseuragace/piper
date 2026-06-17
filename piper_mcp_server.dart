@@ -3,7 +3,7 @@ import 'dart:convert';
 import 'dart:async';
 
 import 'piper_tts.dart';
-import 'piper_feedback_engine.dart';
+import 'src/feedback/piper_feedback_engine.dart';
 
 // ============================================================
 // QUEUE

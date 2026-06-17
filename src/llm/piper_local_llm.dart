@@ -3,7 +3,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as path;
 
-import 'piper_tts.dart';
+import '../../piper_tts.dart';
 import 'piper_ai_client.dart';
 
 // ============================================================

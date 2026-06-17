@@ -1,4 +1,4 @@
-import 'piper_cochange.dart';
+import '../src/observation/piper_cochange.dart';
 
 // Deterministic checks for co-change coupling: parsing git-log numstat into a
 // coupling graph, and deciding whether a change is coherent coupling vs scatter.

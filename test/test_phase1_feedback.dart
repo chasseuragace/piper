@@ -1,5 +1,5 @@
-import 'piper_balcony.dart';
-import 'piper_trip_ledger.dart';
+import '../src/observation/piper_balcony.dart';
+import '../src/observation/piper_trip_ledger.dart';
 
 // Deterministic checks for the Phase 1 agent-feedback loop: tripwire concern
 // ids, ack suppression, and the escalation-always-breaks-through guarantee.

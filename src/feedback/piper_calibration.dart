@@ -2,7 +2,7 @@ import 'dart:io';
 import 'dart:convert';
 import 'package:path/path.dart' as path;
 
-import 'piper_tts.dart';
+import '../../piper_tts.dart';
 
 // ============================================================
 // CALIBRATION: the feedback loop is a free labeled dataset

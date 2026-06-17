@@ -3,7 +3,7 @@ import 'dart:convert';
 import 'dart:async';
 import 'piper_tts.dart';
 import 'piper_mcp_server.dart';
-import 'piper_feedback_engine.dart';
+import 'src/feedback/piper_feedback_engine.dart';
 
 // HTTP MCP Server implementation following MCP HTTP transport standard
 class HttpMcpServer {
