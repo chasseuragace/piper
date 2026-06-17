@@ -317,6 +317,24 @@ Future<void> recordAck(
   }
 }
 
+// Drop ALL persisted trip + ack state for a single workspace, leaving every
+// other workspace's entries intact. Lets a test start from a clean slate without
+// nuking the shared ledger files. No-op if the workspace has no stored state.
+Future<void> forgetWorkspaceLedger(String workspaceId) async {
+  for (final read in [_readLedger, _readAcks]) {
+    final isAcks = read == _readAcks;
+    try {
+      final all = await read();
+      if (!all.containsKey(workspaceId)) continue;
+      all.remove(workspaceId);
+      await (isAcks ? _acksFile() : _ledgerFile())
+          .writeAsString(jsonEncode(all));
+    } catch (e) {
+      stderr.writeln('Error clearing ledger for $workspaceId: $e');
+    }
+  }
+}
+
 // Has the workspace grown materially worse than when [ack] was recorded? A jump
 // in the coarse file- or churn-bucket counts as escalation; small follow-on
 // edits do not, so one extra line never undoes a dismissal.

@@ -16,6 +16,11 @@ Future<void> main() async {
     }
   }
 
+  // Hermetic start: the trip/ack ledger persists to disk keyed by workspace, so
+  // a prior run's acks would otherwise pre-suppress concerns and flake the
+  // "no ack -> nothing suppressed" check on the second run.
+  await forgetWorkspaceLedger(ws);
+
   final obs = <String, dynamic>{
     'isGitRepo': true,
     'filesChanged': 1,
@@ -25,11 +30,27 @@ Future<void> main() async {
     'moduleSpread': 1,
     'srcTouched': true,
     'testTouched': false,
+    // Repo has a test harness; this change just skipped it -> "missing-tests"
+    // (the per-change omission), not the standing "no-test-harness" note.
+    'repoHasTests': true,
   };
 
   final trip = evaluateTripWire(obs, [], 'arngeir');
   final concerns = List<String>.from(trip['concerns'] as List);
   check('tripwire emits stable id "missing-tests"', concerns.contains('missing-tests'));
+
+  // Same untested change in a repo with NO test harness: standing condition, not
+  // a per-change omission -> "no-test-harness", and never the per-change id.
+  final noHarnessObs = Map<String, dynamic>.from(obs)..['repoHasTests'] = false;
+  final noHarness =
+      List<String>.from(evaluateTripWire(noHarnessObs, [], 'arngeir')['concerns'] as List);
+  check('no test harness -> emits "no-test-harness"', noHarness.contains('no-test-harness'));
+  check('no test harness -> does NOT emit "missing-tests"',
+      !noHarness.contains('missing-tests'));
+  check('"no-test-harness" carries no severity point (stays low/none)',
+      prescoreSeverity({'filesChanged': 1, 'insertions': 5, 'deletions': 0},
+              ['no-test-harness']) ==
+          'none');
 
   final before = await suppressedConcerns(ws, concerns, obs);
   check('no ack -> nothing suppressed', !before.contains('missing-tests'));

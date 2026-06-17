@@ -79,6 +79,10 @@ Future<Map<String, dynamic>> observeWorkspace(
     'lastCommitAgeSeconds': null,
     // Tests touched in the window by EITHER the tree or an in-window commit.
     'anyTestInWindow': false,
+    // Standing fact: does the repo contain ANY test-shaped file at all? Lets us
+    // tell "this change skipped tests" (repo tests, you didn't) from "no test
+    // harness exists" (a property of the repo, not the change).
+    'repoHasTests': false,
   };
 
   try {
@@ -98,6 +102,35 @@ Future<Map<String, dynamic>> observeWorkspace(
       'HEAD',
     ]);
     if (branch.trim().isNotEmpty) result['branch'] = branch.trim();
+
+    // STANDING FACT: does this repo have ANY test-shaped file at all? ONE git
+    // listing — names only, never contents, never per-commit — narrowed by
+    // pathspecs that mirror _looksLikeTest, then confirmed through that same
+    // authority so there's a single definition of "test". git stops emitting at
+    // the first match candidate set; we break on the first confirmed hit. This
+    // separates a per-change omission ("missing-tests") from a repo property
+    // ("no-test-harness") so the latter doesn't re-fire every time the diff grows.
+    final testListing = await _git(workspaceId, [
+      'ls-files',
+      '--',
+      '*_test.dart',
+      '*.test.ts',
+      '*.test.js',
+      '*_spec.rb',
+      'test/*',
+      '*/test/*',
+      '*/tests/*',
+      'spec/*',
+      '*/spec/*',
+    ]);
+    for (final line in testListing.split('\n')) {
+      final p = line.trim();
+      if (p.isEmpty) continue;
+      if (_looksLikeTest(p)) {
+        result['repoHasTests'] = true;
+        break;
+      }
+    }
 
     // Magnitude + spread of tracked changes vs HEAD.
     final numstat = await _git(workspaceId, ['diff', 'HEAD', '--numstat']);
@@ -346,7 +379,17 @@ Map<String, dynamic> evaluateTripWire(
   final testsInWindow =
       obs['testTouched'] == true || obs['anyTestInWindow'] == true;
   if (obs['srcTouched'] == true && !testsInWindow) {
-    fire('missing-tests', 'source changed without tests');
+    if (obs['repoHasTests'] == true) {
+      // The repo tests, this change didn't — a real per-change omission.
+      fire('missing-tests', 'source changed without tests');
+    } else {
+      // No test-shaped file exists anywhere — there's nothing to hang a test on.
+      // This is a property of the repo, not the change, so it carries no severity
+      // point (see prescoreSeverity) and rides a distinct id: meant as a one-time
+      // soft note, not a tripwire that revives on every diff-growth.
+      fire('no-test-harness',
+          'no test harness in repo — source changed with nothing to test against');
+    }
   }
 
   int streak = 1;
