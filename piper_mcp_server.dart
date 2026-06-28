@@ -4,76 +4,14 @@ import 'dart:async';
 
 import 'piper_tts.dart';
 import 'src/feedback/piper_feedback_engine.dart';
+import 'src/models/json_rpc_request.dart';
+import 'src/speech_queue/enqueue_utterance.dart';
 
-// ============================================================
-// QUEUE
-// ============================================================
-
-// Every audible utterance — agent line OR balcony intervention — goes through
-// this single serialized queue. That invariant is what keeps a voice switch
-// (which restarts the Piper server, ~4s) from ever landing mid-playback: the
-// processor awaits each utterance fully, so a restart only happens in the gap
-// between finished utterances. Graceful delay, never an abrupt cut.
-final List<Map<String, String>> _speechQueue = [];
-bool _isProcessingQueue = false;
 List<String> _availableVoices = ['arngeir'];
 
 // Pending balcony judgements per workspace, drained into each tool return so
 // the agent gets the insight on the current call rather than the next one.
 final Map<String, List<Map<String, dynamic>>> _judgementQueue = {};
-
-// ============================================================
-// MCP PROTOCOL TYPES
-// ============================================================
-
-class JsonRpcRequest {
-  final String jsonrpc;
-  final String method;
-  final dynamic params;
-  final dynamic id;
-
-  JsonRpcRequest({
-    required this.jsonrpc,
-    required this.method,
-    this.params,
-    this.id,
-  });
-
-  factory JsonRpcRequest.fromJson(Map<String, dynamic> json) {
-    return JsonRpcRequest(
-      jsonrpc: json['jsonrpc'],
-      method: json['method'],
-      params: json['params'],
-      id: json['id'],
-    );
-  }
-}
-
-class JsonRpcResponse {
-  final String jsonrpc;
-  final dynamic result;
-  final dynamic error;
-  final dynamic id;
-
-  JsonRpcResponse({
-    this.jsonrpc = '2.0',
-    this.result,
-    this.error,
-    required this.id,
-  });
-
-  Map<String, dynamic> toJson() {
-    final map = <String, dynamic>{'jsonrpc': jsonrpc, 'id': id};
-
-    if (error != null) {
-      map['error'] = error;
-    } else {
-      map['result'] = result;
-    }
-
-    return map;
-  }
-}
 
 // ============================================================
 // MAIN
@@ -327,7 +265,7 @@ Future<Map<String, dynamic>> _handleCallTool(
   // STEP 1 — SPEAK IMMEDIATELY (enqueue; plays async, serialized)
   // ==========================================================
 
-  _enqueueUtterance(
+  enqueueUtterance(
     tts,
     text: sanitizedText,
     voice: voice,
@@ -490,7 +428,7 @@ Future<Map<String, dynamic>> _handleCallTool(
 
         // Logged as 'observer' so it never re-triggers the judge nor counts
         // toward the agent's lens streak.
-        _enqueueUtterance(
+        enqueueUtterance(
           tts,
           text: spokenSan,
           voice: recVoice,
@@ -567,56 +505,4 @@ Future<Map<String, dynamic>> _handleCallTool(
       {'type': 'text', 'text': jsonEncode(responseJson)},
     ],
   };
-}
-
-// Helper functions are now imported from piper_feedback_engine.dart
-
-// ============================================================
-// QUEUE PROCESSOR
-// ============================================================
-
-// Single entry point for ALL audible output. Enqueue, never call tts.speak
-// directly — that is the invariant that prevents mid-playback restarts.
-void _enqueueUtterance(
-  PiperTTS tts, {
-  required String text,
-  required String voice,
-  required String workspaceId,
-  required String source,
-}) {
-  _speechQueue.add({
-    'text': text,
-    'voice': voice,
-    'workspaceId': workspaceId,
-    'source': source,
-  });
-  if (!_isProcessingQueue) {
-    _isProcessingQueue = true;
-    _processQueue(tts);
-  }
-}
-
-Future<void> _processQueue(PiperTTS tts) async {
-  while (_speechQueue.isNotEmpty) {
-    final item = _speechQueue.removeAt(0);
-    final text = item['text'] ?? '';
-    final voice = item['voice'] ?? 'arngeir';
-    final workspaceId = item['workspaceId'] ?? Directory.current.path;
-
-    if (text.trim().isEmpty) continue;
-
-    // Claim the shared audio channel (file-backed, cross-process) for the full
-    // duration of this utterance, then release. Other Piper instances see this
-    // and hold off, so audio never overlaps; the TTL clears it if we crash.
-    await markSpeaking(voice, workspaceId);
-    try {
-      await tts.speak(text, voice: voice);
-    } catch (e) {
-      stderr.writeln('Error speaking queued item: $e');
-    } finally {
-      await clearSpeaking();
-    }
-  }
-
-  _isProcessingQueue = false;
 }

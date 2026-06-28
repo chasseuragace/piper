@@ -4,6 +4,7 @@ import 'dart:async';
 import 'piper_tts.dart';
 import 'piper_mcp_server.dart';
 import 'src/feedback/piper_feedback_engine.dart';
+import 'src/models/json_rpc_request.dart';
 
 // HTTP MCP Server implementation following MCP HTTP transport standard
 class HttpMcpServer {

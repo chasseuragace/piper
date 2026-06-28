@@ -494,6 +494,13 @@ List<Map<String, String>> detectClaims(
   final recentCommits = (obs['recentCommits'] as List?) ?? const [];
   final noWindowCommit = recentCommits.isEmpty;
   final lastAge = obs['lastCommitAgeSeconds'] as int?;
+  // A commit made just BEFORE the agent started narrating sits outside the
+  // window (which is a story boundary, not a ground-truth one), so it won't
+  // appear in recentCommits. But a genuinely fresh commit IS the "I committed
+  // it" the agent is claiming. Freshness — not window membership — is what
+  // separates an honest claim (committed 15s ago, tree clean) from a stale one
+  // (last commit an hour ago, work still dirty). 120s mirrors _tripCooldown.
+  final hasFreshCommit = lastAge != null && lastAge <= 120;
 
   // Phrase the staleness of the newest commit for a concrete reason line.
   String commitTrail() {
@@ -555,7 +562,7 @@ List<Map<String, String>> detectClaims(
     'fully complete',
     'finalized',
   ]);
-  if (saysCommitted && noWindowCommit) {
+  if (saysCommitted && noWindowCommit && !hasFreshCommit) {
     fires.add({
       'id': 'completion-claim',
       'reason':

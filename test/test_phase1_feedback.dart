@@ -133,5 +133,35 @@ Future<void> main() async {
   check('prescore: clean tree -> none',
       prescoreSeverity({'filesChanged': 0, 'insertions': 0, 'deletions': 0}, const []) == 'none');
 
+  // Claim-detection: "committed" claims gate on commit FRESHNESS, not on the
+  // narration window. A commit made just before the agent spoke falls outside
+  // the window (recentCommits empty) but is still real ground truth.
+  List<String> claimIds(String text, Map<String, dynamic> o) =>
+      detectClaims(text, o).map((f) => f['id'] as String).toList();
+
+  // Base: clean tree, no in-window commit. lastCommitAgeSeconds varies below.
+  Map<String, dynamic> commitObs(int? lastAge) => {
+    'isGitRepo': true,
+    'filesChanged': 0,
+    'srcTouched': false,
+    'recentCommits': const [],
+    'lastCommitAgeSeconds': lastAge,
+    'anyTestInWindow': false,
+  };
+
+  check('"committed" + fresh commit just before window -> no completion-claim',
+      !claimIds('committed the refactor', commitObs(15)).contains('completion-claim'));
+  check('"committed" + stale last commit, nothing fresh -> fires completion-claim',
+      claimIds('committed the refactor', commitObs(3600)).contains('completion-claim'));
+  check('"committed" + no commits at all -> fires completion-claim',
+      claimIds('committed the refactor', commitObs(null)).contains('completion-claim'));
+  // Boundary: a commit older than the 120s freshness window is no longer proof.
+  check('"committed" + commit just past freshness window -> fires completion-claim',
+      claimIds('committed the refactor', commitObs(121)).contains('completion-claim'));
+  // "done" with a still-dirty tree is a separate catch freshness must NOT excuse.
+  final doneDirty = commitObs(15)..['filesChanged'] = 3;
+  check('"done" + fresh commit but tree still dirty -> still fires completion-claim',
+      claimIds('all done', doneDirty).contains('completion-claim'));
+
   print('\n$pass passed, $fail failed');
 }
