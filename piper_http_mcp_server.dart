@@ -66,6 +66,15 @@ class HttpMcpServer {
         return;
       }
 
+      // Plain synthesis endpoint: sanitize + synthesize and return the wav
+      // bytes for the CLIENT to play (used by the Flutter table). This is the
+      // counterpart to the `speak` MCP tool, which plays server-side; here the
+      // app owns playback, it just wants preprocessed audio.
+      if (request.uri.path == '/tts') {
+        await _handleTtsSynth(request);
+        return;
+      }
+
       final contentType = request.headers.contentType;
       if (contentType?.mimeType != 'application/json') {
         _sendErrorResponse(
@@ -98,6 +107,86 @@ class HttpMcpServer {
         HttpStatus.internalServerError,
         e.toString(),
       );
+    }
+  }
+
+  /// POST /tts  { "text": "...", "voice": "arngeir" }  ->  audio/wav bytes.
+  ///
+  /// Runs the same `sanitizeText` preprocessing the `speak` tool uses (markdown
+  /// / timestamp stripping, typography + persona rewrites), synthesizes with the
+  /// requested voice, and returns the raw wav for the *client* to play. No
+  /// server-side playback, no logging — just preprocessed audio.
+  ///
+  /// ── DESIGN DECISION (TTS for the Flutter table) ───────────────────────────
+  /// The app must own playback (stop / volume / app lifecycle), so server-side
+  /// playback was ruled out. That left three options:
+  ///   1. raw piper TTS (:5000)  → returns wav but does NO preprocessing
+  ///                               (markdown/timestamps spoken literally). Rejected.
+  ///   2. `speak` MCP tool (:3000) → preprocesses, but plays server-side (afplay)
+  ///                               and returns a cue, not bytes. Wrong for the app.
+  ///   3. THIS endpoint (:3000 /tts) → preprocess + synthesize, return wav bytes;
+  ///                               the app plays them in-app. Chosen.
+  /// The sanitizer is deliberately NOT extracted into the shared package: only
+  /// piper needs it, so it stays here (single copy, no cross-repo coupling).
+  /// Counterpart: the Flutter `TtsService`, which POSTs here and plays the wav.
+  Future<void> _handleTtsSynth(HttpRequest request) async {
+    String? tempPath;
+    try {
+      final body = await utf8.decoder.bind(request).join();
+      if (body.trim().isEmpty) {
+        _sendErrorResponse(
+          request.response,
+          HttpStatus.badRequest,
+          'Request body cannot be empty',
+        );
+        return;
+      }
+
+      final Map<String, dynamic> json = jsonDecode(body) as Map<String, dynamic>;
+      final text = json['text'];
+      if (text == null || text is! String || text.trim().isEmpty) {
+        _sendErrorResponse(
+          request.response,
+          HttpStatus.badRequest,
+          'Missing or empty "text"',
+        );
+        return;
+      }
+
+      final voice = (json['voice'] as String?) ?? 'arngeir';
+      if (!_availableVoices.contains(voice)) {
+        _sendErrorResponse(
+          request.response,
+          HttpStatus.badRequest,
+          'Invalid voice: $voice. Available voices: ${_availableVoices.join(", ")}',
+        );
+        return;
+      }
+
+      final sanitized = sanitizeText(text, voice: voice);
+      // Per-call voice: make sure the engine has the requested voice loaded
+      // (switching reloads the model, so same-voice calls stay fast).
+      await _tts.ensureServerRunning(voice: voice);
+      tempPath = await _tts.textToSpeech(sanitized);
+      final bytes = await File(tempPath).readAsBytes();
+
+      request.response.statusCode = HttpStatus.ok;
+      request.response.headers.contentType = ContentType('audio', 'wav');
+      request.response.add(bytes);
+      await request.response.close();
+    } catch (e) {
+      print('Error in /tts: $e');
+      _sendErrorResponse(
+        request.response,
+        HttpStatus.internalServerError,
+        'TTS synthesis failed: $e',
+      );
+    } finally {
+      if (tempPath != null) {
+        try {
+          await File(tempPath).delete();
+        } catch (_) {}
+      }
     }
   }
 
