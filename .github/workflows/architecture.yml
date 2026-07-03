@@ -1,0 +1,24 @@
+name: Architecture
+
+# The anti-rot guarantee for ARCHITECTURE.generated.md: regenerate from the AST
+# and fail if the committed doc has drifted from the code. See tool/gen_arch.dart.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  arch-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+
+      - name: Install dependencies
+        run: dart pub get
+
+      - name: ARCHITECTURE.generated.md is up to date
+        run: dart run tool/gen_arch.dart --check
